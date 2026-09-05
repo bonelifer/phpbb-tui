@@ -33,6 +33,15 @@ SUCHEN = [
     ("unanswered", "such_unbeantwortet"),
 ]
 
+# Die drei Postfächer, die phpBB immer anlegt. „outbox" sind Nachrichten, die
+# der Empfänger noch nicht gelesen hat – solange stehen sie dort und nicht in
+# „sentbox". Eigene Ordner des Nutzers kennt dieser Client nicht.
+PM_ORDNER = [
+    ("inbox", "pm_posteingang"),
+    ("sentbox", "pm_gesendet"),
+    ("outbox", "pm_postausgang"),
+]
+
 
 class BoardError(RuntimeError):
     pass
@@ -93,6 +102,45 @@ class Thread:
     page: int = 1
     pages: int = 1
     start: int = 0
+
+
+@dataclass
+class Nachricht:
+    """Eine Zeile im Postfach."""
+    mid: int
+    subject: str
+    partner: str = ""          # Absender im Eingang, Empfänger im Ausgang
+    date: str = ""
+    unread: bool = False
+    ordner_id: int = 0         # phpBBs „f": 0 = Eingang, -1 = Gesendet, -2 = Ausgang
+
+
+@dataclass
+class PM:
+    """Eine geöffnete private Nachricht."""
+    mid: int
+    subject: str
+    von: str = ""
+    an: str = ""
+    date: str = ""
+    body: str = ""
+    ordner_id: int = 0
+    anhaenge: list[Anhang] = field(default_factory=list)
+
+
+@dataclass
+class Entwurf:
+    """Ein offenes Formular: Beitrag oder private Nachricht.
+
+    `ziel` und `params` sagen, wohin das Fertige geht – `posting.php` für
+    Beiträge, `ucp.php?i=pm&mode=compose` für Nachrichten. Alles danach ist
+    für beide gleich, deshalb kennt die Oberfläche nur noch diesen Entwurf.
+    """
+    felder: dict[str, str]
+    ziel: str
+    params: dict
+    anhaenge_moeglich: bool = True
+    empfaenger: list[str] = field(default_factory=list)
 
 
 # --------------------------------------------------------------------------
@@ -167,6 +215,7 @@ class Board:
         self.s.cookies = self.jar            # type: ignore[assignment]
         self.s.headers["User-Agent"] = USER_AGENT
         self.username = ""
+        self.pm_neu = 0          # ungelesene private Nachrichten
 
     # -- unterste Ebene ----------------------------------------------------
 
@@ -196,17 +245,38 @@ class Board:
         if 0 < rest <= 3:
             time.sleep(rest)
 
+    def _nachfassen(self, path: str, params: dict | None):
+        """Einmal nachfassen, wenn die Verbindung abreißt.
+
+        Boards schließen ruhende Verbindungen; die nächste Anfrage läuft dann
+        in einen abgebrochenen Kanal. Beim Lesen darf man das gefahrlos
+        wiederholen – beim Senden nicht, das gäbe womöglich zwei Beiträge.
+        """
+        try:
+            return self.s.get(f"{self.base}/{path}", params=params, timeout=30)
+        except requests.ConnectionError:
+            self.s.close()
+            return self.s.get(f"{self.base}/{path}", params=params, timeout=30)
+
     def get(self, path: str, **params) -> str:
-        r = self.s.get(f"{self.base}/{path}", params=params or None, timeout=30)
-        r.raise_for_status()
+        # Netzfehler kommen als BoardError heraus, damit die Oberfläche sie
+        # wie jeden anderen Fehler in der Fußzeile zeigt, statt abzustürzen.
+        try:
+            r = self._nachfassen(path, params or None)
+            r.raise_for_status()
+        except requests.RequestException as fehler:
+            raise BoardError(t("netz_fehler", fehler=fehler)) from fehler
         self._save()
         return r.text
 
     def post(self, path: str, data: dict, files: dict | None = None, **params) -> str:
         self._formular_reifen(data)
-        r = self.s.post(f"{self.base}/{path}", params=params or None,
-                        data=data, files=files, timeout=120)
-        r.raise_for_status()
+        try:
+            r = self.s.post(f"{self.base}/{path}", params=params or None,
+                            data=data, files=files, timeout=120)
+            r.raise_for_status()
+        except requests.RequestException as fehler:
+            raise BoardError(t("netz_fehler", fehler=fehler)) from fehler
         self._save()
         return r.text
 
@@ -254,6 +324,7 @@ class Board:
         """
         page = self.get("index.php")
         self.require_login(page)
+        self.pm_neu = self._pm_badge(page)
 
         sprung = self._parse_jumpbox(page)
         if sprung:
@@ -477,29 +548,32 @@ class Board:
 
     # -- Schreiben ---------------------------------------------------------
 
-    def _posting_form(self, **params) -> dict[str, str]:
-        page = self.get("posting.php", **params)
+    def _posting_form(self, sende_params: dict, **hol_params) -> Entwurf:
+        """Formular holen. `hol_params` steht in der Adresse, `sende_params`
+        geht später beim Absenden mit – beim Zitieren ist das nicht dasselbe:
+        geholt wird mit `mode=quote`, abgeschickt mit `mode=reply`."""
+        page = self.get("posting.php", **hol_params)
         self.require_login(page)
         if "postform" not in page:
             err = re.search(r'<div class="[^"]*message[^"]*">(.*?)</div>', page, re.S)
             raise BoardError(strip_tags(err.group(1)) if err
                              else t("kein_formular"))
-        return form_fields(page, "postform")
+        return Entwurf(form_fields(page, "postform"), "posting.php", sende_params,
+                       anhaenge_moeglich='name="fileupload"' in page)
 
-    def reply_form(self, tid: int) -> dict[str, str]:
-        return self._posting_form(mode="reply", t=tid)
+    def reply_form(self, tid: int) -> Entwurf:
+        return self._posting_form(dict(mode="reply", t=tid), mode="reply", t=tid)
 
-    def quote_form(self, tid: int, pid: int) -> dict[str, str]:
-        return self._posting_form(mode="quote", t=tid, p=pid)
+    def quote_form(self, tid: int, pid: int) -> Entwurf:
+        return self._posting_form(dict(mode="reply", t=tid), mode="quote", t=tid, p=pid)
 
-    def new_topic_form(self, fid: int) -> dict[str, str]:
-        return self._posting_form(mode="post", f=fid)
+    def new_topic_form(self, fid: int) -> Entwurf:
+        return self._posting_form(dict(mode="post", f=fid), mode="post", f=fid)
 
-    def edit_form(self, pid: int) -> dict[str, str]:
-        return self._posting_form(mode="edit", p=pid)
+    def edit_form(self, pid: int) -> Entwurf:
+        return self._posting_form(dict(mode="edit", p=pid), mode="edit", p=pid)
 
-    def datei_anhaengen(self, fields: dict[str, str], pfad: Path, kommentar: str,
-                        mode: str, **params) -> dict[str, str]:
+    def datei_anhaengen(self, e: Entwurf, pfad: Path, kommentar: str = "") -> None:
         """Datei ins offene Formular hochladen.
 
         phpBB nimmt den Upload für sich entgegen („Datei hinzufügen") und gibt
@@ -510,40 +584,40 @@ class Board:
         pfad = Path(pfad).expanduser()
         if not pfad.is_file():
             raise BoardError(t("datei_fehlt", pfad=pfad))
-        data = dict(fields)
+        data = dict(e.felder)
         data["filecomment"] = kommentar
         data["add_file"] = "Datei hinzufügen"
         with open(pfad, "rb") as f:
-            seite = self.post("posting.php", data,
-                              files={"fileupload": (pfad.name, f)}, mode=mode, **params)
+            seite = self.post(e.ziel, data, files={"fileupload": (pfad.name, f)},
+                              **e.params)
         fehler = self._fehlertext(seite)
         if fehler:
             raise BoardError(fehler)
         if "postform" not in seite:
             raise BoardError(t("upload_unerwartet"))
-        return form_fields(seite, "postform")
+        e.felder = form_fields(seite, "postform")
 
     @staticmethod
-    def angehaengte_dateien(fields: dict[str, str]) -> list[str]:
+    def angehaengte_dateien(e: Entwurf) -> list[str]:
         """Namen der Dateien, die im Formular hängen."""
-        return [v for k, v in fields.items()
+        return [v for k, v in e.felder.items()
                 if re.match(r"attachment_data\[\d+\]\[real_filename\]", k) and v]
 
-    def anhang_entfernen(self, fields: dict[str, str], nummer: int,
-                         mode: str, **params) -> dict[str, str]:
-        data = dict(fields)
+    def anhang_entfernen(self, e: Entwurf, nummer: int) -> None:
+        data = dict(e.felder)
         data[f"delete_file[{nummer}]"] = "Datei löschen"
-        seite = self.post("posting.php", data, mode=mode, **params)
-        return form_fields(seite, "postform") if "postform" in seite else fields
+        seite = self.post(e.ziel, data, **e.params)
+        if "postform" in seite:
+            e.felder = form_fields(seite, "postform")
 
-    def submit(self, fields: dict[str, str], subject: str, message: str,
-               mode: str, preview: bool = False, **params) -> str:
-        data = dict(fields)
+    def submit(self, e: Entwurf, subject: str, message: str,
+               preview: bool = False) -> str:
+        data = dict(e.felder)
         data["subject"] = subject
         data["message"] = message
         data["preview" if preview else "post"] = "Vorschau" if preview else "Absenden"
         data.setdefault("creation_time", str(int(time.time()) - 2))
-        return self.post("posting.php", data, mode=mode, **params)
+        return self.post(e.ziel, data, **e.params)
 
     # -- Antwort auswerten -------------------------------------------------
 
@@ -577,6 +651,155 @@ class Board:
 
         m = re.search(r'<div class="content">(.*?)</div>\s*</div>', page, re.S)
         return html_to_text(m.group(1)) if m else t("keine_vorschau")
+
+    # -- Private Nachrichten -----------------------------------------------
+    #
+    # phpBB behandelt Nachrichten fast wie Beiträge, nur unter ucp.php: die
+    # Postfächer sehen aus wie Themenlisten, eine geöffnete Nachricht wie ein
+    # Beitrag, und das Schreibformular heißt ebenfalls „postform". Neu ist nur
+    # der Empfänger – der wird in zwei Schritten gesetzt, siehe unten.
+
+    def pm_liste(self, ordner: str = "inbox",
+                 start: int = 0) -> tuple[list[Nachricht], str, str, int, int]:
+        """(Nachrichten, Überschrift, Füllstand, Seite, Seiten)"""
+        page = self.get("ucp.php", i="pm", folder=ordner, start=start)
+        self.require_login(page)
+        # Die erste <h2> ist die Überschrift des persönlichen Bereichs und
+        # trägt eine Klasse; die des Postfachs steht blank da.
+        kopf = re.search(r"<h2>\s*(.*?)\s*</h2>", page, re.S)
+        # Der Füllstand steht als einziger Absatz mit Prozentzeichen über der
+        # Liste – so gefunden statt über den (übersetzten) Wortlaut.
+        voll = re.search(r"<p>([^<]*%[^<]*)</p>", page)
+        out: list[Nachricht] = []
+        for r in re.split(r'(?=<li class="row)', page):
+            link = re.search(r'<a href="[^"]*?mode=view[^"]*?f=(-?\d+)[^"]*?p=(\d+)[^"]*"'
+                             r'[^>]*class="topictitle"[^>]*>(.*?)</a>', r, re.S)
+            if not link:
+                continue
+            wer = _USER.search(r)
+            # Eingang: „von X » Datum" im Fließtext. Gesendet/Ausgang: das
+            # Datum steht rechts in einer eigenen Spalte.
+            datum = (re.search(r"&raquo;\s*([^<]+)", r)
+                     or re.search(r'class="info"[^>]*>\s*<span>[^<:]*:?\s*([^<]+)', r))
+            out.append(Nachricht(
+                mid=int(link.group(2)),
+                subject=strip_tags(link.group(3)),
+                partner=unescape(wer.group(1)) if wer else "",
+                date=unescape(datum.group(1)) if datum else "",
+                unread="pm_unread" in r,
+                ordner_id=int(link.group(1)),
+            ))
+        seite, seiten = self._pagination(page)
+        return (out, strip_tags(kopf.group(1)) if kopf else "",
+                strip_tags(voll.group(1)) if voll else "", seite, seiten)
+
+    def pm_lesen(self, mid: int, fid: int = 0) -> PM:
+        from .markup import html_to_text
+
+        page = self.get("ucp.php", i="pm", mode="view", f=fid, p=mid)
+        self.require_login(page)
+        betreff = re.search(r'<h3 class="first">(.*?)</h3>', page, re.S)
+        kopf = re.search(r'<p class="author">(.*?)</p>', page, re.S)
+        # Im Kopf stehen der Reihe nach: Datum, Absender, Empfänger.
+        datum = re.search(r"</strong>\s*([^<]+)", kopf.group(1)) if kopf else None
+        namen = _USER.findall(kopf.group(1)) if kopf else []
+        inhalt = re.search(r'<div class="content">(.*?)</div>\s*(?:<dl class="attach|'
+                           r'<div id="sig|</div>)', page, re.S)
+        return PM(
+            mid=mid,
+            subject=strip_tags(betreff.group(1)) if betreff else "",
+            von=unescape(namen[0]) if namen else "",
+            an=", ".join(unescape(n) for n in namen[1:]),
+            date=unescape(datum.group(1)) if datum else "",
+            body=html_to_text(inhalt.group(1)) if inhalt else "",
+            ordner_id=fid,
+            anhaenge=self._parse_anhaenge(page),
+        )
+
+    def _pm_form(self, **hol) -> Entwurf:
+        page = self.get("ucp.php", i="pm", mode="compose", **hol)
+        self.require_login(page)
+        if "postform" not in page:
+            err = re.search(r'<div class="[^"]*message[^"]*">(.*?)</div>', page, re.S)
+            raise BoardError(strip_tags(err.group(1)) if err else t("kein_formular"))
+        params = {"i": "pm", "mode": "compose", "action": hol.get("action", "post")}
+        if "p" in hol:
+            params["p"] = hol["p"]
+        return Entwurf(form_fields(page, "postform"), "ucp.php", params,
+                       anhaenge_moeglich='name="fileupload"' in page,
+                       empfaenger=self._pm_empfaenger(page))
+
+    def pm_neu_entwurf(self, an_id: int = 0) -> Entwurf:
+        """Leere Nachricht. `an_id` ist die Benutzernummer, wenn das Board sie
+        schon kennt (Link „Private Nachricht" im Profil) – dann steht der
+        Empfänger von vornherein drin."""
+        return self._pm_form(u=an_id) if an_id else self._pm_form()
+
+    def pm_antwort_entwurf(self, mid: int, fid: int = 0, zitat: bool = False) -> Entwurf:
+        """Antwort oder Zitat. Der Empfänger kommt hier fertig aus dem Board:
+        das Formular bringt `address_list[u][…]` als verstecktes Feld mit."""
+        return self._pm_form(action="quote" if zitat else "reply", f=fid, p=mid)
+
+    @staticmethod
+    def _pm_empfaenger(page: str) -> list[str]:
+        """Die Namen, die im Formular als Empfänger hängen.
+
+        Die Nummern stehen in `address_list[u][…]`, die Namen aber nur in der
+        Liste daneben – jeder Eintrag hat einen „Löschen"-Knopf `remove_u[…]`,
+        direkt gefolgt vom Namen.
+        """
+        m = re.search(r'<form[^>]*id="postform".*?</form>', page, re.S)
+        block = m.group(0) if m else page
+        return [unescape(n) for n in re.findall(
+            r'remove_[ug]\[\d+\].*?class="username[^"]*"[^>]*>([^<]+)</(?:a|span)>',
+            block, re.S)]
+
+    def pm_empfaenger_hinzufuegen(self, e: Entwurf, name: str) -> None:
+        """Empfänger eintragen – Schritt eins von zweien.
+
+        phpBB nimmt keinen Namen beim Absenden entgegen. Der Name muss erst
+        über den Knopf „Hinzufügen" zu einer Benutzernummer aufgelöst werden;
+        zurück kommt das Formular mit `address_list[u][nummer]`. Genauso läuft
+        das Anhängen einer Datei, siehe `datei_anhaengen`.
+        """
+        data = dict(e.felder)
+        data["username_list"] = name
+        data["add_to"] = "Hinzufügen"
+        seite = self.post(e.ziel, data, **e.params)
+        fehler = self._fehlertext(seite)
+        if fehler:
+            raise BoardError(fehler)
+        if "postform" not in seite:
+            raise BoardError(t("kein_formular"))
+        e.felder = form_fields(seite, "postform")
+        e.empfaenger = self._pm_empfaenger(seite)
+
+    def pm_loeschen(self, mid: int, fid: int = 0) -> None:
+        page = self.get("ucp.php", i="pm", mode="compose", action="delete", f=fid, p=mid)
+        self.require_login(page)
+        m = re.search(r'<form[^>]*id="confirm"[^>]*action="([^"]*)".*?</form>', page, re.S)
+        if not m:
+            raise BoardError(t("formular_fehlt", id="confirm"))
+        daten = form_fields(page, "confirm")
+        daten["confirm"] = "Ja"
+        # Die Rückfrage trägt ihren Schlüssel in der Adresse, nicht im Formular.
+        r = self.s.post(f"{self.base}/{unescape(m.group(1)).lstrip('./')}",
+                        data=daten, timeout=60)
+        r.raise_for_status()
+        self._save()
+        fehler = self._fehlertext(r.text)
+        if fehler:
+            raise BoardError(fehler)
+
+    @staticmethod
+    def _pm_badge(page: str) -> int:
+        """Ungelesene Nachrichten aus der Kopfleiste. Bei Null hängt phpBB der
+        Zahl die Klasse „hidden" an, statt sie wegzulassen."""
+        m = re.search(r'folder=inbox[^"]*"[^>]*>.{0,400}?<strong class="badge([^"]*)"'
+                      r"[^>]*>(\d+)</strong>", page, re.S)
+        if not m:
+            return 0
+        return 0 if "hidden" in m.group(1) else int(m.group(2))
 
     def dump(self, page: str) -> Path:
         pfad = self.cookie_path.parent / "last-response.html"

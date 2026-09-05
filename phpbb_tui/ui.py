@@ -14,8 +14,8 @@ import tempfile
 import textwrap
 from pathlib import Path
 
-from .board import (SUCHEN, Anhang, Board, BoardError, Forum, LoginRequired,
-                    Post, Thread, Topic)
+from .board import (PM_ORDNER, SUCHEN, Anhang, Board, BoardError, Entwurf,
+                    Forum, LoginRequired, Nachricht, PM, Thread, Topic)
 from .config import Config
 from .i18n import t
 from .markup import bbcode_to_md, md_to_bbcode
@@ -150,7 +150,8 @@ class Oberflaeche:
             self.kopf(titel)
             sicht = self.hoehe - 2
             for i, z in enumerate(zeilen[pos: pos + sicht]):
-                self._zeile(1 + i, z)
+                text, attr = z if isinstance(z, tuple) else (z, 0)
+                self._zeile(1 + i, text, attr)
             self.fuss(hilfe)
             self.scr.refresh()
             k = self.scr.getch()
@@ -216,9 +217,18 @@ class Oberflaeche:
                     foren = []
                 laden = False
 
-            eintraege: list[tuple[str, object]] = [("suche", sid) for sid, _ in SUCHEN]
-            zeilen = [f"  ★ {t(schl)}" for _, schl in SUCHEN] + ["  " + "─" * 40]
+            eintraege: list[tuple[str, object]] = []
+            zeilen: list[str] = []
+            # Als Gast gibt es kein Postfach – dann auch keinen Eintrag dafür.
+            if self.b.username:
+                eintraege.append(("pm", None))
+                zeilen.append(f"  ✉ {t('pm_titel')}"
+                              + (f"   ({self.b.pm_neu} {t('pm_neu')})"
+                                 if self.b.pm_neu else ""))
+            eintraege += [("suche", sid) for sid, _ in SUCHEN]
+            zeilen += [f"  ★ {t(schl)}" for _, schl in SUCHEN]
             eintraege.append(("trenner", None))
+            zeilen.append("  " + "─" * 40)
             for f in foren:
                 if filter_text and filter_text.lower() not in f.name.lower():
                     continue
@@ -230,13 +240,16 @@ class Oberflaeche:
             taste, pos = self.liste(
                 f"{self.b.name} · {self.b.username or t('gast')}"
                 + (f"  ⟨{filter_text}⟩" if filter_text else ""),
-                zeilen, t("hilfe_menue"), tasten="/swR", start=pos)
+                zeilen, t("hilfe_menue"), tasten="/swRm", start=pos)
 
             if taste == "q":
                 return
             if taste == "w":
                 raise Wechseln
-            if taste == "R":
+            if taste == "m":
+                self.postfach()
+                laden = True            # frischt nebenbei den Zähler auf
+            elif taste == "R":
                 laden = True
             elif taste == "/":
                 filter_text = self.frage(t("frage_foren_filter"))
@@ -247,7 +260,10 @@ class Oberflaeche:
                     self.themenliste(worte=worte)
             elif taste == "\n" and pos < len(eintraege):
                 art, wert = eintraege[pos]
-                if art == "suche":
+                if art == "pm":
+                    self.postfach()
+                    laden = True
+                elif art == "suche":
                     self.themenliste(such_id=str(wert))
                 elif art == "forum":
                     self.themenliste(fid=wert.fid)      # type: ignore[union-attr]
@@ -395,7 +411,7 @@ class Oberflaeche:
             elif k == ord("o"):
                 self.oeffnen(f"{self.b.base}/viewtopic.php?t={tid}")
             elif k == ord("a") and th.posts:
-                self.anhaenge(th.posts[akt])
+                self.anhaenge(th.posts[akt].author, th.posts[akt].anhaenge)
             elif k == ord("r"):
                 if self.schreiben(mode="reply", tid=tid):
                     start = max(0, (th.pages - 1) * 15)
@@ -432,7 +448,7 @@ class Oberflaeche:
                     zeilen.append(("  " + teil, attr, n))
             for anh in p.anhaenge:
                 groesse = f" ({anh.groesse})" if anh.groesse else ""
-                zeilen.append((f"  📎 {anh.name}{groesse}   – Taste a",
+                zeilen.append((f"  📎 {anh.name}{groesse}   – {t('anhang_taste')}",
                                curses.color_pair(C_ANHANG), n))
             zeilen.append(("", 0, n))
         return zeilen
@@ -450,21 +466,21 @@ class Oberflaeche:
 
     # -- Anhänge -----------------------------------------------------------
 
-    def anhaenge(self, post: Post) -> None:
-        if not post.anhaenge:
+    def anhaenge(self, autor: str, liste: list[Anhang]) -> None:
+        if not liste:
             self.meldung = t("keine_anhaenge")
             return
         pos = 0
         while True:
             zeilen = [f"  📎 {a.name}" + (f"  ({a.groesse})" if a.groesse else "")
-                      for a in post.anhaenge]
+                      for a in liste]
             taste, pos = self.liste(
-                t("anhaenge_von", autor=post.author), zeilen,
+                t("anhaenge_von", autor=autor), zeilen,
                 t("hilfe_anhaenge"), tasten="s", start=pos)
             if taste == "q":
                 return
-            if taste in ("\n", "s") and post.anhaenge:
-                anh = post.anhaenge[pos]
+            if taste in ("\n", "s") and liste:
+                anh = liste[pos]
                 self.warten(t("laedt_datei", name=anh.name))
                 try:
                     ziel = self.b.anhang_laden(anh, self.cfg.downloads)
@@ -482,72 +498,83 @@ class Oberflaeche:
         self.warten(t("holt_formular"))
         try:
             if mode == "reply":
-                felder, params = self.b.reply_form(tid), {"mode": "reply", "t": tid}
+                e = self.b.reply_form(tid)
             elif mode == "quote":
-                felder, params = self.b.quote_form(tid, pid), {"mode": "reply", "t": tid}
+                e = self.b.quote_form(tid, pid)
             elif mode == "post":
-                felder, params = self.b.new_topic_form(fid), {"mode": "post", "f": fid}
+                e = self.b.new_topic_form(fid)
             elif mode == "edit":
-                felder, params = self.b.edit_form(pid), {"mode": "edit", "p": pid}
+                e = self.b.edit_form(pid)
             else:
                 return False
         except LoginRequired:
             return self.schreiben(mode, tid, fid, pid) if self.anmelden() else False
-        except BoardError as e:
-            self.meldung = str(e)
+        except BoardError as fehler:
+            self.meldung = str(fehler)
             return False
+        return self._verfassen(e)
 
-        rest = {k: v for k, v in params.items() if k != "mode"}
-        betreff = felder.get("subject", "")
-        vorlage = bbcode_to_md(felder.get("message", ""))
+    def _verfassen(self, e: Entwurf, titel: str = "", erfolg: str = "") -> bool:
+        """Editor → Vorschau → Absenden.
+
+        Kennt den Unterschied zwischen Beitrag und privater Nachricht nicht
+        mehr: der Entwurf weiß selbst, wohin er geht.
+        """
+        betreff = e.felder.get("subject", "")
+        vorlage = bbcode_to_md(e.felder.get("message", ""))
 
         while True:
             betreff, text = self._editor(betreff, vorlage)
             if not text.strip():
-                self.meldung = "verworfen"
+                self.meldung = t("verworfen")
                 return False
             bb = md_to_bbcode(text)
 
             while True:      # Vorschau-Schleife (Anhänge ändern nichts am Text)
                 self.warten(t("vorschau_laeuft"))
                 try:
-                    seite = self.b.submit(felder, betreff, bb, mode=params["mode"],
-                                          preview=True, **rest)
+                    seite = self.b.submit(e, betreff, bb, preview=True)
                     vorschau = self.b.preview_text(seite)
-                except Exception as e:
-                    vorschau = t("keine_vorschau") + f" ({e})"
+                except Exception as fehler:
+                    vorschau = t("keine_vorschau") + f" ({fehler})"
 
-                dateien = self.b.angehaengte_dateien(felder)
+                dateien = self.b.angehaengte_dateien(e)
                 kopf = [t("betreff_zeile", betreff=betreff)]
+                if e.empfaenger:
+                    kopf.append(t("an_zeile", liste=", ".join(e.empfaenger)))
                 if dateien:
                     kopf.append(t("anhaenge_zeile", liste=", ".join(dateien)))
                 zeilen = kopf + [""] + vorschau.split("\n")
-                wahl = self.seite_zeigen(t("vorschau"), zeilen,
-                                         t("hilfe_vorschau"), tasten="adxb")
+                # Boards erlauben Anhänge nicht überall – bei privaten
+                # Nachrichten sind sie meist abgeschaltet. Dann fehlt der
+                # Knopf im Formular, und wir bieten ihn gar nicht erst an.
+                wahl = self.seite_zeigen(
+                    titel or t("vorschau"), zeilen,
+                    t("hilfe_vorschau") if e.anhaenge_moeglich
+                    else t("hilfe_vorschau_ohne_anhang"),
+                    tasten="adxb" if e.anhaenge_moeglich else "ab")
 
                 if wahl == "d":
-                    self._anhaengen(felder, params["mode"], rest)
+                    self._anhaengen(e)
                     continue
                 if wahl == "x":
                     if dateien:
                         self.warten(t("entfernt"))
                         try:
-                            felder.clear()
-                            felder.update(self.b.anhang_entfernen(
-                                dict(felder), len(dateien) - 1, params["mode"], **rest))
-                        except Exception as e:
-                            self.meldung = t("fehler_entfernen", fehler=e)
+                            self.b.anhang_entfernen(e, len(dateien) - 1)
+                        except Exception as fehler:
+                            self.meldung = t("fehler_entfernen", fehler=fehler)
                     continue
                 break
 
             if wahl == "a":
                 self.warten(t("sendet"))
                 try:
-                    seite = self.b.submit(felder, betreff, bb, mode=params["mode"], **rest)
+                    seite = self.b.submit(e, betreff, bb)
                     ok, meldung = self.b.submit_result(seite)
-                except Exception as e:
-                    ok, meldung = False, str(e)
-                self.meldung = meldung
+                except Exception as fehler:
+                    ok, meldung = False, str(fehler)
+                self.meldung = erfolg if (ok and erfolg) else meldung
                 if ok:
                     return True
                 if not self.bestaetigen(t("nochmal_bearbeiten", meldung=meldung)):
@@ -556,22 +583,19 @@ class Oberflaeche:
             elif wahl == "b":
                 vorlage = text
             else:
-                self.meldung = "verworfen"
+                self.meldung = t("verworfen")
                 return False
 
-    def _anhaengen(self, felder: dict, mode: str, rest: dict) -> None:
-        pfad = self.frage(t("frage_datei"), vorgabe="")
+    def _anhaengen(self, e: Entwurf) -> None:
+        pfad = self.frage(t("frage_datei"))
         if not pfad:
             return
         self.warten(t("laedt_hoch"))
         try:
-            neu = self.b.datei_anhaengen(dict(felder), Path(pfad).expanduser(),
-                                         "", mode, **rest)
-            felder.clear()
-            felder.update(neu)
+            self.b.datei_anhaengen(e, Path(pfad).expanduser())
             self.meldung = t("angehaengt")
-        except Exception as e:
-            self.meldung = t("fehler_anhaengen", fehler=e)
+        except Exception as fehler:
+            self.meldung = t("fehler_anhaengen", fehler=fehler)
 
     def _editor(self, betreff: str, vorlage: str) -> tuple[str, str]:
         kopfzeilen = [
@@ -607,6 +631,186 @@ class Oberflaeche:
                 zeilen = zeilen[i + 1:]
                 break
         return neuer_betreff, "\n".join(zeilen).strip()
+
+    # -- Private Nachrichten -----------------------------------------------
+
+    def postfach(self, ordner: str = "inbox") -> None:
+        start, pos, filter_text = 0, 0, ""
+        nachrichten: list[Nachricht] = []
+        kopf, voll, seite, seiten = "", "", 1, 1
+        schritt = 25
+        laden = True
+
+        while True:
+            if laden:
+                self.warten()
+                try:
+                    nachrichten, kopf, voll, seite, seiten = self.b.pm_liste(ordner, start)
+                except LoginRequired:
+                    if not self.anmelden():
+                        return
+                    continue
+                except BoardError as fehler:
+                    self.meldung = str(fehler)
+                    nachrichten = []
+                # Wie viele Nachrichten auf eine Seite gehen, sagt das Board
+                # nirgends. Es füllt aber jede Seite bis auf die letzte ganz
+                # auf – also ist die erste volle Seite das Maß.
+                if seiten > 1 and nachrichten:
+                    schritt = max(schritt, len(nachrichten))
+                laden = False
+                pos = 0
+
+            sichtbar = [n for n in nachrichten if not filter_text
+                        or filter_text.lower() in f"{n.subject} {n.partner}".lower()]
+            zeilen = []
+            for n in sichtbar:
+                rechts = f"{n.partner[:20]:<20} {n.date[:19]:>19}"
+                platz = max(10, self.breite - len(rechts) - 6)
+                zeilen.append(f" {'●' if n.unread else ' '} {n.subject[:platz]}".ljust(
+                    max(0, self.breite - len(rechts) - 2)) + rechts)
+
+            taste, pos = self.liste(
+                " · ".join(x for x in (kopf, voll) if x)
+                + (f"  ⟨{filter_text}⟩" if filter_text else ""),
+                zeilen, t("hilfe_postfach"), tasten="/npNRfd", start=pos)
+
+            if taste == "q":
+                return
+            if taste == "f":
+                namen = [o for o, _ in PM_ORDNER]
+                ordner = namen[(namen.index(ordner) + 1) % len(namen)]
+                start, filter_text = 0, ""
+                laden = True
+            elif taste == "n" and seite < seiten:
+                start += schritt
+                laden = True
+            elif taste == "p" and start > 0:
+                start = max(0, start - schritt)
+                laden = True
+            elif taste == "R":
+                laden = True
+            elif taste == "/":
+                filter_text = self.frage(t("frage_filter"))
+                pos = 0
+            elif taste == "N":
+                if self.pm_schreiben():
+                    laden = True
+            elif taste == "d" and pos < len(sichtbar):
+                n = sichtbar[pos]
+                if self.bestaetigen(t("pm_loeschen_frage", betreff=n.subject[:40])):
+                    self.warten()
+                    try:
+                        self.b.pm_loeschen(n.mid, n.ordner_id)
+                        self.meldung = t("pm_geloescht")
+                    except Exception as fehler:
+                        self.meldung = t("pm_fehler_loeschen", fehler=fehler)
+                    laden = True
+            elif taste == "\n" and pos < len(sichtbar):
+                self.pm_zeigen(sichtbar[pos].mid, sichtbar[pos].ordner_id)
+                laden = True
+
+    def pm_zeigen(self, mid: int, fid: int = 0) -> None:
+        while True:
+            self.warten()
+            try:
+                n = self.b.pm_lesen(mid, fid)
+            except LoginRequired:
+                if not self.anmelden():
+                    return
+                continue
+            except BoardError as fehler:
+                self.meldung = str(fehler)
+                return
+
+            wahl = self.seite_zeigen(n.subject, self._pm_zeilen(n),
+                                     t("hilfe_pm"), tasten="rzdao")
+            if wahl == "q":
+                return
+            if wahl in ("r", "z"):
+                self.pm_schreiben(antwort_auf=mid, fid=fid, zitat=(wahl == "z"))
+            elif wahl == "a":
+                self.anhaenge(n.von, n.anhaenge)
+            elif wahl == "o":
+                self.oeffnen(f"{self.b.base}/ucp.php?i=pm&mode=view&f={fid}&p={mid}")
+            elif wahl == "d":
+                if not self.bestaetigen(t("pm_loeschen_frage", betreff=n.subject[:40])):
+                    continue
+                try:
+                    self.b.pm_loeschen(mid, fid)
+                except Exception as fehler:
+                    self.meldung = t("pm_fehler_loeschen", fehler=fehler)
+                    continue
+                self.meldung = t("pm_geloescht")
+                return
+
+    def _pm_zeilen(self, n: PM) -> list[tuple[str, int]]:
+        breite = max(40, min(self.breite - 2, 100))
+        zeilen: list[tuple[str, int]] = [
+            (f"┌─ {t('pm_von')} {n.von}".ljust(breite)[:breite],
+             curses.color_pair(C_AUTOR) | curses.A_BOLD),
+            (f"│  {t('pm_an')} {n.an}", curses.color_pair(C_AUTOR)),
+            (f"│  {n.date}", curses.color_pair(C_DATUM)),
+            ("", 0),
+        ]
+        for absatz in n.body.split("\n"):
+            if not absatz.strip():
+                zeilen.append(("", 0))
+                continue
+            zitat = absatz.startswith("│")
+            attr = curses.color_pair(C_ZITAT) if zitat else 0
+            for teil in textwrap.wrap(absatz, breite - 2,
+                                      subsequent_indent="│ " if zitat else "",
+                                      drop_whitespace=True) or [""]:
+                zeilen.append(("  " + teil, attr))
+        for anh in n.anhaenge:
+            groesse = f" ({anh.groesse})" if anh.groesse else ""
+            zeilen.append((f"  📎 {anh.name}{groesse}   – {t('anhang_taste')}",
+                           curses.color_pair(C_ANHANG)))
+        return zeilen
+
+    def pm_schreiben(self, antwort_auf: int = 0, fid: int = 0,
+                     zitat: bool = False) -> bool:
+        self.warten(t("holt_formular"))
+        try:
+            if antwort_auf:
+                e = self.b.pm_antwort_entwurf(antwort_auf, fid, zitat)
+            else:
+                e = self.b.pm_neu_entwurf()
+        except LoginRequired:
+            return (self.pm_schreiben(antwort_auf, fid, zitat)
+                    if self.anmelden() else False)
+        except BoardError as fehler:
+            self.meldung = str(fehler)
+            return False
+
+        # Beim Antworten steht der Empfänger schon im Formular.
+        if not e.empfaenger and not self._empfaenger_fragen(e):
+            return False
+        return self._verfassen(e, titel=t("pm_vorschau"), erfolg=t("pm_gesendet_kurz"))
+
+    def _empfaenger_fragen(self, e: Entwurf) -> bool:
+        """Empfänger erfragen, bis eine leere Zeile kommt.
+
+        Jeder Name geht einzeln zum Board, das ihn in eine Benutzernummer
+        auflöst – ein Tippfehler fällt also sofort auf und nicht erst beim
+        Absenden. Die Rückmeldung steht dann vor der nächsten Frage.
+        """
+        hinweis = ""
+        while True:
+            name = self.frage(hinweis + t("frage_empfaenger",
+                                          liste=", ".join(e.empfaenger) or "—"))
+            hinweis = ""
+            if not name:
+                if e.empfaenger:
+                    return True
+                self.meldung = t("pm_kein_empfaenger")
+                return False
+            self.warten(t("pm_pruefe", name=name))
+            try:
+                self.b.pm_empfaenger_hinzufuegen(e, name)
+            except Exception as fehler:
+                hinweis = f"{fehler} · "
 
     # -- Anmeldung ---------------------------------------------------------
 

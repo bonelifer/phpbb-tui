@@ -91,13 +91,36 @@ Vim keys throughout:
 | `/` | filter the list |
 | `s` | search the board |
 | `w` | switch board |
-| `N` | new topic |
+| `m` | private messages |
+| `N` | new topic / new message |
 | `r` | reply |
 | `z` | quote reply |
 | `e` | edit your own post |
 | `a` | attachments of the current post |
 | `J` `K` | next / previous post in a thread |
 | `o` | open in the system browser |
+| `f` | next mailbox (inbox → sent → outbox) |
+| `d` | delete the message under the cursor |
+
+## Private messages
+
+`m` from the forum tree — or the `✉` entry at the top of it — opens the inbox.
+The entry carries the number of unread messages; `●` marks them in the list.
+`f` cycles through the three mailboxes phpBB always has: inbox, sent, and
+outbox (sent but not yet read by the recipient).
+
+Reading, replying and quoting work exactly as in a thread, because phpBB
+serves messages through the same machinery — the compose form is even called
+`postform` again. Only the recipient is different. phpBB does not accept a
+name on submit: the name has to be resolved to a user id first, through its
+own round trip, and comes back in the form as `address_list[u][id]`. So `N`
+asks for recipients one at a time and checks each against the board
+immediately; a typo is caught there rather than after you have written the
+whole message. `Enter` on an empty line ends the list. Replies skip the
+question — the board ships the recipient with the reply form.
+
+Most boards switch attachments off for private messages. When the form has no
+upload field, the preview simply does not offer `d` and `x`.
 
 ## Writing
 
@@ -180,9 +203,10 @@ client reads.
 
 ## Limitations
 
-Private messages, polls and moderation are not implemented; press `o` and
-continue in the browser. Tested against phpBB 3.3 with a prosilver-derived
-style.
+Polls, moderation and the message rules of the personal area are not
+implemented; press `o` and continue in the browser. Custom message folders
+beyond the three built-in ones are ignored. Tested against phpBB 3.3 with a
+prosilver-derived style.
 
 ## License
 
@@ -220,9 +244,29 @@ Gastzugang lassen sich auch ohne Konto lesen: `phpbb-tui <name> --guest`.
 
 **Bedienung** — Vim-Tasten: `j`/`k` bewegen, `l`/Enter öffnen, `h`/`q` zurück,
 `^D`/`^U` halbe Seite, `g`/`G` Anfang/Ende, `n`/`p` Seite blättern, `/`
-filtern, `s` suchen, `w` Forum wechseln, `N` neues Thema, `r` antworten, `z`
-zitieren, `e` eigenen Beitrag bearbeiten, `a` Anhänge, `J`/`K` Beitrag
-weiter/zurück, `o` im Browser öffnen.
+filtern, `s` suchen, `w` Forum wechseln, `m` Postfach, `N` neues Thema bzw.
+neue Nachricht, `r` antworten, `z` zitieren, `e` eigenen Beitrag bearbeiten,
+`a` Anhänge, `J`/`K` Beitrag weiter/zurück, `f` Ordner wechseln, `d` löschen,
+`o` im Browser öffnen.
+
+**Private Nachrichten** — `m` im Forenbaum (oder der `✉`-Eintrag ganz oben)
+öffnet den Posteingang; daneben steht die Zahl der ungelesenen, `●` markiert
+sie in der Liste. `f` schaltet durch die drei Postfächer, die jedes phpBB hat:
+Eingang, Gesendet und Postausgang — letzteres sind abgeschickte Nachrichten,
+die der Empfänger noch nicht gelesen hat.
+
+Lesen, Antworten und Zitieren gehen wie im Thread, denn phpBB liefert
+Nachrichten über dieselbe Mechanik; das Schreibformular heißt sogar wieder
+`postform`. Anders ist nur der Empfänger: einen Namen nimmt phpBB beim
+Absenden nicht entgegen, er muss vorher in einem eigenen Gang zu einer
+Benutzernummer aufgelöst werden und kommt als `address_list[u][nummer]`
+zurück. Deshalb fragt `N` die Empfänger einzeln ab und prüft jeden sofort
+gegen das Board — ein Tippfehler fällt so vor dem Schreiben auf und nicht
+danach. Enter auf leerer Zeile beendet die Liste. Beim Antworten entfällt die
+Frage, da bringt das Formular den Empfänger schon mit.
+
+Die meisten Boards schalten Anhänge für Nachrichten ab. Fehlt das Feld im
+Formular, bietet die Vorschau `d` und `x` gar nicht erst an.
 
 **Schreiben** — erste Zeile mit `#` ist der Betreff. Nach dem Speichern zeigt
 das Forum selbst die Vorschau; erst `a` sendet ab. Zitate laufen verlustfrei in

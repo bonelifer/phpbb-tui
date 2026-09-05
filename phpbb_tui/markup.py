@@ -251,12 +251,16 @@ def bbcode_to_md(bb: str) -> str:
     s = re.sub(r"\[c\](.*?)\[/c\]", r"`\1`", s, flags=re.S | re.I)
 
     def quote(m: re.Match) -> str:
-        wer = m.group(1) or ""
-        inner = bbcode_to_md(m.group(2)).strip()
+        wer = m.group(1) or m.group(2) or ""
+        inner = bbcode_to_md(m.group(3)).strip()
         kopf = f"> **{wer}:**\n" if wer else ""
         return kopf + "\n".join("> " + z for z in inner.split("\n")) + "\n"
 
-    s = re.sub(r'\[quote(?:="([^"]*)")?\](.*?)\[/quote\]', quote, s, flags=re.S | re.I)
+    # Drei Schreibweisen kommen vor: [quote], [quote="Name"] und – so zitiert
+    # phpBB private Nachrichten – [quote=Name msg_id=… time=… user_id=…].
+    # Die letzte ohne Anführungszeichen und mit Anhängseln, die hier wegfallen.
+    s = re.sub(r'\[quote(?:=(?:"([^"]*)"|([^\s\]]+)))?[^\]]*\](.*?)\[/quote\]',
+               quote, s, flags=re.S | re.I)
     s = re.sub(r"\[b\](.*?)\[/b\]", r"**\1**", s, flags=re.S | re.I)
     s = re.sub(r"\[i\](.*?)\[/i\]", r"*\1*", s, flags=re.S | re.I)
     s = re.sub(r"\[u\](.*?)\[/u\]", r"\1", s, flags=re.S | re.I)
