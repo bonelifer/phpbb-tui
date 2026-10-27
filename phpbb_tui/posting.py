@@ -28,14 +28,20 @@ def arguments(parser: argparse.ArgumentParser, name: str, positive) -> None:
         parser.add_argument("-Q", "--quote", type=positive)
     else:
         parser.add_argument("-P", "--post", type=positive, required=True)
-    parser.add_argument("-s", "--subject", required=name == "post")
+    body_arguments(parser, name == "post")
+
+
+def body_arguments(parser: argparse.ArgumentParser, subject_required: bool,
+                   dry_help: str = "validate without a POST request") -> None:
+    """Share body sources and non-submitting modes with PM composition."""
+    parser.add_argument("-s", "--subject", required=subject_required)
     sources = parser.add_mutually_exclusive_group()
     sources.add_argument("-b", "--body")
     sources.add_argument("-B", "--body-file", metavar="FILE",
                          help="UTF-8 body file; - reads piped stdin")
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("-n", "--dry-run", action="store_true",
-                       help="validate the form without a POST request")
+                       help=dry_help)
     modes.add_argument("-v", "--preview", action="store_true",
                        help="request phpBB's preview without final submission")
 
@@ -90,26 +96,29 @@ def submit(board: Board, form: Entwurf, subject: str, message: str,
     try:
         return board.submit(form, subject, message, preview=preview)
     except (BoardError, OSError) as cause:
-        network = cause.__cause__
-        if preview:
-            raise CommandError("preview_failed",
-                               "Could not obtain the preview", 9) from cause
-        if isinstance(network, requests.ConnectTimeout):
-            raise CommandError(
-                "network_error",
-                "Could not connect; post was not submitted", 9) from cause
-        if isinstance(network, requests.RequestException):
-            response = network.response
-            status = response.status_code if response is not None else None
-            if status is not None and 400 <= status < 500:
-                raise CommandError(
-                    "submission_rejected",
-                    "The server rejected the submission", 4) from cause
-        raise CommandError(
-            "submission_uncertain",
-            "Submission may have completed; check the board before retrying",
-            10
-        ) from cause
+        raise submission_error(cause, preview) from cause
+
+
+def submission_error(cause: Exception | None = None,
+                     preview: bool = False) -> CommandError:
+    """Classify one attempted write without retrying it or echoing secrets."""
+    network = (cause if isinstance(cause, requests.RequestException)
+               else getattr(cause, "__cause__", None))
+    if preview:
+        return CommandError(
+            "preview_failed", "Could not obtain the preview", 9)
+    if isinstance(network, requests.ConnectTimeout):
+        return CommandError("network_error",
+                            "Could not connect; nothing was submitted", 9)
+    if isinstance(network, requests.RequestException):
+        response = network.response
+        status = response.status_code if response is not None else None
+        if status is not None and 400 <= status < 500:
+            return CommandError("submission_rejected",
+                                "The server rejected the submission", 4)
+    return CommandError(
+        "submission_uncertain",
+        "Submission may have completed; check the board before retrying", 10)
 
 
 def identifiers(page: str, base: str, confirmed_url: str = "") -> dict:

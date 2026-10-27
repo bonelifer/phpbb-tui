@@ -130,8 +130,10 @@ with `--json`. Each command has `--help`.
 See the [automation reference](docs/automation.md) for search modes, pagination,
 local filtering, JSON fields, exit codes, and unattended examples. The
 [posting reference](docs/posting.md) covers new topics, replies, quotes, edits,
-preview, dry-run, and uncertain submissions. PM commands and attachment
-downloads/uploads remain future stages.
+preview, dry-run, and uncertain submissions. The
+[PM reference](docs/private-messages.md) covers mailboxes, sending, replies,
+quotes, and explicit deletion. Attachment downloads/uploads remain a future
+stage.
 
 ## Private messages
 
@@ -241,7 +243,7 @@ prosilver-derived style.
 
 ## Acknowledgments
 
-- The read-only automation interface, tests, and documentation were assisted by
+- The automation interface, tests, and documentation were assisted by
   [Codex](https://www.anthropic.com/Codex).
 
 ## License
