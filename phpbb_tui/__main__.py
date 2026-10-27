@@ -47,6 +47,19 @@ def auswahl(cfg: cfgmod.Config) -> cfgmod.BoardConfig | None:
 
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
+    from . import cli
+    if argv and argv[0] == "tui" and len(argv) > 1:
+        argv = argv[1:]
+    elif argv and argv[0] in cli.COMMANDS:
+        # Preserve existing board-only launches, including guest aliases.
+        board_only = all(a in ("--guest", "--gast") for a in argv[1:])
+        try:
+            legacy_board = board_only and cfgmod.laden().finde(argv[0])
+        except (OSError, ValueError, TypeError, AttributeError):
+            # Let the automation path report configuration errors cleanly.
+            legacy_board = None
+        if not legacy_board:
+            return cli.main(argv)
     # Gastmodus: viele Boards sind ohne Konto lesbar. Schreiben geht dann
     # nicht, das Forum sagt es beim Versuch selbst.
     gast = "--guest" in argv or "--gast" in argv
@@ -55,6 +68,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if argv and argv[0] in ("-h", "--help", "hilfe", "help"):
         print(hilfetext())
+        print("\nAutomation: phpbb-tui {forums,topics,topic,search} --help")
+        print("TUI: phpbb-tui tui <board> [--guest]")
         return 0
 
     if argv and argv[0] == "add":

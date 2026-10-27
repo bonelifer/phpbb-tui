@@ -102,6 +102,30 @@ Vim keys throughout:
 | `f` | next mailbox (inbox → sent → outbox) |
 | `d` | delete the message under the cursor |
 
+## Non-interactive / Automation
+
+Read forums without entering curses, opening an editor or browser, or answering
+prompts. The existing interactive commands and key bindings remain available.
+
+```sh
+phpbb-tui login example
+phpbb-tui forums example --json
+phpbb-tui topics example --forum 2 --page 1 --json
+phpbb-tui topic example --topic 42 --json
+phpbb-tui search example --unread --json
+phpbb-tui search example --query "extension development" --json
+```
+
+Run `login` explicitly to establish a session; automation commands reuse it and
+fail if it expires. Use `--guest` for an isolated anonymous session on boards
+that allow guest access. `--quiet` suppresses successful output; it conflicts
+with `--json`. Each command has `--help`.
+
+See the [automation reference](docs/automation.md) for search modes, pagination,
+local filtering, JSON fields, exit codes, and unattended examples. This first
+CLI stage provides read operations; posting, PM commands, and attachment
+downloads/uploads are not yet included.
+
 ## Private messages
 
 `m` from the forum tree — or the `✉` entry at the top of it — opens the inbox.
@@ -207,6 +231,11 @@ Polls, moderation and the message rules of the personal area are not
 implemented; press `o` and continue in the browser. Custom message folders
 beyond the three built-in ones are ignored. Tested against phpBB 3.3 with a
 prosilver-derived style.
+
+## Acknowledgments
+
+- The read-only automation interface, tests, and documentation were assisted by
+  [Codex](https://www.anthropic.com/Codex).
 
 ## License
 
