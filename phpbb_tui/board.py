@@ -551,8 +551,10 @@ class Board:
             ))
         return out
 
-    def anhang_laden(self, anhang: Anhang, ziel_ordner: Path) -> Path:
+    def anhang_laden(self, anhang: Anhang, ziel_ordner: Path, *,
+                     target: Path | None = None, overwrite: bool = True) -> Path:
         """Anhang herunterladen und den Pfad zurückgeben."""
+        ziel_ordner = Path(target).parent if target is not None else ziel_ordner
         ziel_ordner.mkdir(parents=True, exist_ok=True)
         r = self.s.get(f"{self.base}/download/file.php", params={"id": anhang.aid},
                        timeout=120, stream=True)
@@ -571,7 +573,9 @@ class Board:
             name = re.sub(r"[/\\\x00-\x1f\x7f]", "_", name).strip()
             if name in ("", ".", ".."):
                 name = f"anhang-{anhang.aid}"
-            ziel = ziel_ordner / name
+            ziel = Path(target) if target is not None else ziel_ordner / name
+            if not overwrite and os.path.lexists(ziel):
+                raise FileExistsError("Attachment destination already exists")
             if ziel.is_symlink() or (ziel.exists() and not ziel.is_file()):
                 raise BoardError("Attachment destination is not a regular file")
             fd, temporary = tempfile.mkstemp(prefix=".phpbb-tui-", dir=ziel_ordner)
@@ -580,7 +584,11 @@ class Board:
                     f.write(stueck)
             if ziel.is_symlink() or (ziel.exists() and not ziel.is_file()):
                 raise BoardError("Attachment destination is not a regular file")
-            os.replace(temporary, ziel)
+            if overwrite:
+                os.replace(temporary, ziel)
+            else:
+                # Publishing by hard link fails atomically if a file appeared.
+                os.link(temporary, ziel)
             return ziel
         finally:
             try:

@@ -1,0 +1,121 @@
+# Attachment automation
+
+Attachment commands reuse the existing Board authentication, parsing, download,
+and multipart-upload behavior. They never open downloaded files or launch a
+browser/editor. Stored-session authentication, JSON, quiet output, and expected
+errors follow the [automation reference](automation.md).
+
+## Listing
+
+```sh
+phpbb-tui attachments example --post 101 --json
+phpbb-tui attachments example --message 42 --folder inbox --json
+```
+
+Specify exactly one `--post ID` (`-p`) or `--message ID` (`-m`). Post IDs work
+across topic pages through phpBB's own post lookup. PMs require authentication;
+their optional `--folder` (`-f`) defaults to `inbox` and accepts `sent`, `outbox`,
+or the `sentbox` alias. Folder options apply only to PM context.
+
+Results expose visible attachment IDs, filenames, source size text, and image
+flags from the existing parser. An empty list means no attachments were visible
+in that resource. Missing resources or unsupported response markup fail rather
+than silently treating another post/PM as the selected resource.
+
+## Downloading
+
+```sh
+phpbb-tui attachment example --attachment 7 --output ./downloads/
+phpbb-tui attachment example --post 101 --attachment 7 --output ./chosen.png
+phpbb-tui attachment example --message 42 --attachment 9 --output ./files/
+```
+
+`--attachment ID` (`-a`) is required. phpBB's file endpoint accepts the file ID
+alone and enforces its own forum/PM permissions. Optional post/PM context also
+verifies that the ID is visible in that specific resource before downloading.
+
+`--output` (`-o`) selects a file or directory. An existing directory, or a path
+ending in `/`, receives the server-provided filename. A new path without `/`
+at the end is treated as a filename. Without `--output`, the existing configured
+downloads directory is used. Missing directories can be created under a writable
+ancestor. Server filenames are decoded and sanitized to stay in that directory;
+an unavailable filename falls back to the existing attachment name or file ID.
+
+Existing files are protected by default. `--force` (`-F`) permits replacing a
+regular file after the complete transfer. Symlink targets and non-regular file
+targets are rejected. A temporary file in the destination directory receives the
+stream; failures leave an existing destination intact and clean up the temporary
+file. Publishing without `--force` fails atomically if another file appeared
+during the transfer. This uses filesystem hard-link support; unsupported
+filesystems fail safely instead of weakening overwrite protection.
+
+Downloads keep finite HTTP timeouts. HTML responses without an attachment
+filename are rejected as possible login/error pages. JSON reports the saved
+path and actual byte count only after successful publication. Downloaded files
+are not automatically opened.
+
+`--guest` (`-g`) permits anonymous post listing/downloads where phpBB allows
+them, using an isolated temporary session. Explicit PM context rejects guest
+mode. File-ID-only downloads still enforce the board's PM authorization rules.
+
+## Uploading with posts and PMs
+
+```sh
+phpbb-tui post example --forum 2 --subject "Report" --body-file report.md --attach chart.png
+phpbb-tui reply example --topic 42 --body "Files attached" --attach first.png --attach second.png
+phpbb-tui edit example --post 101 --body-file replacement.md --attach extra.png
+phpbb-tui pm example --to alice --subject "Report" --body "See attached" --attach chart.png
+phpbb-tui pm-reply example --message 42 --body "An attachment" --attach extra.png
+```
+
+Repeat `--attach FILE` (`-A`) to select multiple files. Every file must be a
+readable regular file before any avoidable network mutation. The form must
+offer attachment upload; disabled attachments, permissions, extension policies,
+file sizes, and per-message limits remain controlled by phpBB.
+
+Each upload uses the existing multipart form process, retaining the returned
+attachment fields for final submission. A failed or unconfirmed upload prevents
+the final post/PM send. Existing attachments on an edited post are preserved
+when adding new files. Uploads are separate requests: earlier successful uploads
+can remain as orphan files after a later failure or preview, subject to phpBB's
+normal cleanup. The workflow is not transactional.
+
+`--dry-run` validates local files and whether the form offers attachments,
+but does not upload them. It returns the requested filenames. PM dry-run may
+still use non-final POSTs to resolve recipients. Dry-run cannot prove that a
+file will pass server-side size/extension checks.
+
+`--preview` uploads the selected files and requests phpBB's preview without
+final content submission. Orphan upload files may remain for normal board
+cleanup. Final sending still uses the existing single-attempt/uncertainty rules.
+
+## Output and errors
+
+Both read commands support `--json` (`-j`) or `--quiet` (`-q`), mutually exclusive.
+The standard success envelope contains `success`, `action`, and `board`:
+
+- `attachments`: context `post_id`, or `message_id` and canonical `folder`, plus
+  `attachments` containing `id`, `name`, `size` (source text or `null`), and
+  `image` (boolean).
+- `attachment`: `attachment_id`, `path`, and actual `bytes`, plus resource
+  context when supplied.
+- Writing with `--attach`: adds `attachments`, an array of filenames newly
+  selected/uploaded by this invocation. Existing edit attachments stay in the
+  form but are not repeated in that new-files list.
+
+Status 2 covers invalid combinations and IDs. Status 3 covers session failure.
+Status 4 covers rejected/unconfirmed uploads; status 5 covers local file/output
+failures, including an existing destination without `--force`. Status 7 covers
+missing attachment IDs or context mismatches. Status 8 covers unavailable
+content/permissions, unsafe download responses, or forms without upload support.
+Status 9 covers network/HTTP failures during downloading or uploading. Failed
+uploads never proceed to final sending, although orphan uploads may exist.
+
+Once the final post/PM request begins, the existing status-10 uncertainty rules
+apply. No final content submission is automatically retried. Hidden form fields,
+session parameters, cookies, and raw response diagnostics are excluded from
+normal/JSON output.
+
+Run the offline suite with `python3 -m unittest discover -s tests -v`. Live
+upload checks must use a controlled disposable board with suitable attachment
+permissions; public forums should not receive uncontrolled test writes.

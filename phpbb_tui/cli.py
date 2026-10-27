@@ -14,13 +14,14 @@ from urllib.parse import parse_qs, urlsplit
 import requests
 
 from . import config
+from . import attachments
 from . import posting
 from . import private_messages
 from .board import Anhang, Board, BoardError, Forum, LoginRequired, Post, Topic
 from .command_error import CommandError
 
 
-READ_COMMANDS = ("forums", "topics", "topic", "search")
+READ_COMMANDS = ("forums", "topics", "topic", "search") + attachments.COMMANDS
 COMMANDS = READ_COMMANDS + posting.COMMANDS + private_messages.COMMANDS
 BODY_COMMANDS = posting.COMMANDS + private_messages.WRITE_COMMANDS
 SEARCHES = {"unread": "unreadposts", "new": "newposts",
@@ -83,6 +84,8 @@ def parser() -> Parser:
             posting.arguments(command, name, positive)
         elif name in private_messages.COMMANDS:
             private_messages.arguments(command, name, positive)
+        elif name in attachments.COMMANDS:
+            attachments.arguments(command, name, positive)
     return root
 
 
@@ -277,6 +280,8 @@ def read(board: ReadBoard, args: argparse.Namespace) -> dict:
 
 def human(data: dict) -> str:
     """Render data without making human wording part of the machine API."""
+    if data["action"] in attachments.COMMANDS:
+        return attachments.human(data)
     if data["action"] in private_messages.COMMANDS:
         return private_messages.human(data)
     lines = []
@@ -329,8 +334,12 @@ def main(argv: list[str]) -> int:
         args = parser().parse_args(argv)
         if args.command in private_messages.COMMANDS:
             private_messages.validate(args)
+        if args.command in attachments.COMMANDS:
+            attachments.validate(args)
         body = (posting.body_input(args)
                 if args.command in BODY_COMMANDS else "")
+        if args.command in BODY_COMMANDS:
+            attachments.validate_uploads(args)
         if args.command == "search" and args.query is not None:
             if not args.query.strip():
                 raise CommandError(
@@ -347,6 +356,8 @@ def main(argv: list[str]) -> int:
             raise CommandError(
                 "configuration_error", "Invalid board configuration", 5)
         bc = select_board(cfg, args.board)
+        if args.command == "attachment":
+            args.output_plan = attachments.destination(args, cfg.downloads)
         try:
             address = urlsplit(bc.url)
             address.port
@@ -369,6 +380,8 @@ def main(argv: list[str]) -> int:
                     data = posting.write(board, args, body)
                 elif args.command in private_messages.COMMANDS:
                     data = private_messages.run(board, args, body, pagination)
+                elif args.command in attachments.COMMANDS:
+                    data = attachments.run(board, args)
                 else:
                     data = read(board, args)
             finally:
@@ -397,7 +410,10 @@ def main(argv: list[str]) -> int:
             elif status == 403:
                 error = CommandError(
                     "permission_denied", "Permission denied", 8)
-            elif status == 503 and args.command in private_messages.COMMANDS:
+            elif status == 503 and (
+                    args.command in private_messages.COMMANDS
+                    or (args.command in attachments.COMMANDS
+                        and args.message is not None)):
                 error = CommandError(
                     "operation_unavailable",
                     "Private messaging is unavailable", 8)

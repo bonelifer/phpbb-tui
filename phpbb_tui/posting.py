@@ -11,6 +11,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import requests
 
+from . import attachments
 from .board import Board, BoardError, Entwurf, LoginRequired
 from .command_error import CommandError
 from .markup import bbcode_to_md, md_to_bbcode
@@ -35,6 +36,7 @@ def body_arguments(parser: argparse.ArgumentParser, subject_required: bool,
                    dry_help: str = "validate without a POST request") -> None:
     """Share body sources and non-submitting modes with PM composition."""
     parser.add_argument("-s", "--subject", required=subject_required)
+    attachments.upload_arguments(parser)
     sources = parser.add_mutually_exclusive_group()
     sources.add_argument("-b", "--body")
     sources.add_argument("-B", "--body-file", metavar="FILE",
@@ -173,6 +175,9 @@ def write(board: Board, args: argparse.Namespace, body: str) -> dict:
         body = quote + "\n\n" + body
     message = md_to_bbcode(body)
     result = {"subject": subject, "submitted": False}
+    if args.attach:
+        result["attachments"] = attachments.upload(
+            board, form, args.attach, args.dry_run)
     if args.command == "post":
         result["forum_id"] = args.forum
     elif args.command == "reply":

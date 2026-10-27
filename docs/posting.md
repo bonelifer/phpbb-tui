@@ -75,8 +75,10 @@ final submission. Missing previews and explicit phpBB errors fail. Preview
 and dry-run are mutually exclusive.
 
 Both modes may update ordinary session/visit state. Neither intentionally
-creates or edits a persistent post. Attachments cannot be added through these
-commands yet; the existing interactive attachment workflow is unchanged.
+creates or edits a persistent post. Repeated `--attach FILE` options add files
+where permitted; see the [attachment reference](attachments.md) for upload
+validation, dry-run, preview, and multi-request behavior. The existing
+interactive attachment workflow is unchanged.
 
 ## Output and exit statuses
 

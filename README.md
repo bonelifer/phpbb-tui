@@ -132,8 +132,8 @@ local filtering, JSON fields, exit codes, and unattended examples. The
 [posting reference](docs/posting.md) covers new topics, replies, quotes, edits,
 preview, dry-run, and uncertain submissions. The
 [PM reference](docs/private-messages.md) covers mailboxes, sending, replies,
-quotes, and explicit deletion. Attachment downloads/uploads remain a future
-stage.
+quotes, and explicit deletion. The [attachment reference](docs/attachments.md)
+covers listing, safe downloads, and adding files to posts or PMs where allowed.
 
 ## Private messages
 
