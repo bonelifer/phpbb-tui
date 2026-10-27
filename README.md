@@ -109,7 +109,7 @@ Vim keys throughout:
 
 ## Non-interactive / Automation
 
-Read forums without entering curses, opening an editor or browser, or answering
+Read and write without entering curses, opening an editor or browser, or answering
 prompts. The existing interactive commands and key bindings remain available.
 
 ```sh
@@ -119,6 +119,7 @@ phpbb-tui topics example --forum 2 --page 1 --json
 phpbb-tui topic example --topic 42 --json
 phpbb-tui search example --unread --json
 phpbb-tui search example --query "extension development" --json
+phpbb-tui post example --forum 2 --subject "Report" --body-file report.md --dry-run
 ```
 
 Run `login` explicitly to establish a session; automation commands reuse it and
@@ -127,9 +128,10 @@ that allow guest access. `--quiet` suppresses successful output; it conflicts
 with `--json`. Each command has `--help`.
 
 See the [automation reference](docs/automation.md) for search modes, pagination,
-local filtering, JSON fields, exit codes, and unattended examples. This first
-CLI stage provides read operations; posting, PM commands, and attachment
-downloads/uploads are not yet included.
+local filtering, JSON fields, exit codes, and unattended examples. The
+[posting reference](docs/posting.md) covers new topics, replies, quotes, edits,
+preview, dry-run, and uncertain submissions. PM commands and attachment
+downloads/uploads remain future stages.
 
 ## Private messages
 
