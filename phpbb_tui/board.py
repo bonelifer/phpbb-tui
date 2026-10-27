@@ -16,6 +16,7 @@ import time
 from dataclasses import dataclass, field
 from http.cookiejar import MozillaCookieJar
 from pathlib import Path
+from urllib.parse import parse_qs, urljoin, urlsplit
 
 import requests
 
@@ -630,6 +631,36 @@ class Board:
                 return txt
         return ""
 
+    def pm_submission_id(self, page: str) -> int | None:
+        """Identify a successful PM confirmation by its same-board view URL."""
+        if (not re.search(r'\bid="message"', page)
+                or re.search(r'<form\b[^>]*\bid="postform"', page)):
+            return None
+        base = urlsplit(self.base)
+        for tag in re.findall(r"<meta\b[^>]*>", page, re.I):
+            if not re.search(r'http-equiv="refresh"', tag, re.I):
+                continue
+            content = re.search(r'content="([^"]+)"', tag, re.I)
+            if not content:
+                continue
+            parts = re.split(r"\burl=", content[1], maxsplit=1, flags=re.I)
+            if len(parts) != 2:
+                continue
+            try:
+                address = urlsplit(urljoin(self.base + "/", unescape(parts[1])))
+            except ValueError:
+                continue
+            if (address.scheme, address.netloc, address.path) != (
+                    base.scheme, base.netloc, base.path.rstrip("/") + "/ucp.php"):
+                continue
+            query = parse_qs(address.query)
+            values = query.get("p", [])
+            if (query.get("i") == ["pm"] and query.get("mode") == ["view"]
+                    and len(values) == 1 and re.fullmatch(r"[0-9]+", values[0])
+                    and int(values[0]) > 0):
+                return int(values[0])
+        return None
+
     def submit_result(self, page: str) -> tuple[bool, str]:
         """(erfolgreich, Meldung). Erst positiv prüfen: ein bloßes
         `class="error"` steht auch im Gerüst von Erfolgsseiten."""
@@ -639,6 +670,8 @@ class Board:
         weiter = re.search(r'<meta http-equiv="refresh"[^>]*viewtopic\.php[^"]*#p(\d+)', page)
         if weiter:
             return True, t("beitrag_da_nr", pid=weiter.group(1))
+        if self.pm_submission_id(page) is not None:
+            return True, t("pm_gesendet_kurz")
         fehler = self._fehlertext(page)
         if fehler:
             return False, fehler
