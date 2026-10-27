@@ -12,8 +12,10 @@ from __future__ import annotations
 import html
 import os
 import re
+import tempfile
 import time
 from dataclasses import dataclass, field
+from email.message import Message
 from http.cookiejar import MozillaCookieJar
 from pathlib import Path
 
@@ -532,19 +534,38 @@ class Board:
         ziel_ordner.mkdir(parents=True, exist_ok=True)
         r = self.s.get(f"{self.base}/download/file.php", params={"id": anhang.aid},
                        timeout=120, stream=True)
-        r.raise_for_status()
-        name = anhang.name or f"anhang-{anhang.aid}"
-        # Dateiname aus dem Kopf bevorzugen, er ist verlässlicher
-        cd = r.headers.get("Content-Disposition", "")
-        m = re.search(r'filename\*?=(?:UTF-8\'\')?"?([^";]+)"?', cd)
-        if m:
-            name = unescape(m.group(1))
-        name = re.sub(r"[/\\]", "_", name).strip() or f"anhang-{anhang.aid}"
-        ziel = ziel_ordner / name
-        with open(ziel, "wb") as f:
-            for stueck in r.iter_content(65536):
-                f.write(stueck)
-        return ziel
+        temporary = None
+        try:
+            r.raise_for_status()
+            header = Message()
+            header["Content-Disposition"] = r.headers.get(
+                "Content-Disposition", "")
+            filename = header.get_filename()
+            content_type = r.headers.get("Content-Type", "").split(";")[0].lower()
+            if (not filename and content_type
+                    in ("text/html", "application/xhtml+xml")):
+                raise BoardError("HTML page returned instead of an attachment")
+            name = filename or anhang.name or f"anhang-{anhang.aid}"
+            name = re.sub(r"[/\\\x00-\x1f\x7f]", "_", name).strip()
+            if name in ("", ".", ".."):
+                name = f"anhang-{anhang.aid}"
+            ziel = ziel_ordner / name
+            if ziel.is_symlink() or (ziel.exists() and not ziel.is_file()):
+                raise BoardError("Attachment destination is not a regular file")
+            fd, temporary = tempfile.mkstemp(prefix=".phpbb-tui-", dir=ziel_ordner)
+            with os.fdopen(fd, "wb") as f:
+                for stueck in r.iter_content(65536):
+                    f.write(stueck)
+            if ziel.is_symlink() or (ziel.exists() and not ziel.is_file()):
+                raise BoardError("Attachment destination is not a regular file")
+            os.replace(temporary, ziel)
+            return ziel
+        finally:
+            try:
+                if temporary is not None:
+                    Path(temporary).unlink(missing_ok=True)
+            finally:
+                r.close()
 
     # -- Schreiben ---------------------------------------------------------
 
