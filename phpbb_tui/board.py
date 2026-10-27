@@ -781,7 +781,12 @@ class Board:
         if not m:
             raise BoardError(t("formular_fehlt", id="confirm"))
         daten = form_fields(page, "confirm")
-        daten["confirm"] = "Ja"
+        button = re.search(r'<(?:input|button)\b[^>]*\bname="confirm"[^>]*>',
+                           m.group(0))
+        value = re.search(r'\bvalue="([^"]+)"', button[0]) if button else None
+        if not value:
+            raise BoardError(t("formular_fehlt", id="confirm"))
+        daten["confirm"] = unescape(value[1])
         # Die Rückfrage trägt ihren Schlüssel in der Adresse, nicht im Formular.
         r = self.s.post(f"{self.base}/{unescape(m.group(1)).lstrip('./')}",
                         data=daten, timeout=60)
