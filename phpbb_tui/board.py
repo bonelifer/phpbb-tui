@@ -481,6 +481,18 @@ class Board:
                             or re.search(r"<title>(.*?)</title>", page, re.S)
                             or [None, ""])[1])
         fid = int((re.search(r'viewforum\.php\?f=(\d+)', page) or [0, 0])[1])
+        # Breadcrumbs run from the parent category to the actual forum.
+        # Ignore forum links elsewhere, retaining the legacy fallback when
+        # a style does not expose forum breadcrumbs.
+        for crumb in re.finditer(r'<li\b[^>]*class="([^"]*)"[^>]*>(.*?)</li>',
+                                 page, re.S):
+            if "breadcrumbs" not in crumb[1].split():
+                continue
+            forums = re.findall(
+                r'viewforum\.php\?(?:[^"#]*&(?:amp;)?)?f=([0-9]+)(?=[&#"])',
+                crumb[2])
+            if forums:
+                fid = int(forums[-1])
         th = Thread(tid=tid, title=title, forum_id=fid, start=start)
         for m in re.finditer(r'<div id="p(\d+)" class="post[^"]*">(.*?)(?=<div id="p\d+" '
                              r'class="post|<div class="action-bar bar-bottom|$)', page, re.S):
