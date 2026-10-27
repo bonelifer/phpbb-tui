@@ -416,7 +416,7 @@ class Board:
         return themen, [], titel, seite, seiten
 
     def suche(self, worte: str, start: int = 0) -> tuple[list[Topic], list[Forum], str, int, int]:
-        page = self.get("search.php", keywords=worte, start=start)
+        page = self.get("search.php", keywords=worte, sr="topics", start=start)
         self.require_login(page)
         themen, titel, seite, seiten = self._parse_topics(page)
         return themen, [], f"Suche: {worte}", seite, seiten
