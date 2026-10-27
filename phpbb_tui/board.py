@@ -517,11 +517,15 @@ class Board:
                 continue
             gesehen.add(aid)
             name = re.search(r'download/file\.php\?id=\d+[^"]*"[^>]*>(.*?)</a>', teil, re.S)
-            alt = re.search(r'alt="([^"]+)"', teil)
+            alt = re.search(r'alt="([^"]+)"',
+                            name.group(1) if name else teil)
+            filename = strip_tags(name.group(1)) if name else ""
+            if not filename and alt:
+                filename = unescape(alt.group(1))
             groesse = re.search(r"\(([\d.,]+\s*[KMG]?i?B)\)", strip_tags(teil))
             out.append(Anhang(
                 aid=aid,
-                name=strip_tags(name.group(1)) if name else (alt.group(1) if alt else f"Datei {aid}"),
+                name=filename or f"Datei {aid}",
                 groesse=groesse.group(1) if groesse else "",
                 bild="thumbnail" in teil or "image" in teil,
             ))
