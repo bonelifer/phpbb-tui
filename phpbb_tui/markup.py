@@ -14,6 +14,9 @@ from html.parser import HTMLParser
 # HTML → Text (Anzeige eines Beitrags)
 # --------------------------------------------------------------------------
 
+_QUOTE_START = "\x00quote-start\x00"
+_QUOTE_END = "\x00quote-end\x00"
+
 _BLOCK = {"p", "div", "br", "li", "tr", "h1", "h2", "h3", "h4", "blockquote", "pre"}
 
 
@@ -23,7 +26,7 @@ class _Text(HTMLParser):
         self.out: list[str] = []
         self.quote = 0
         self.in_code = 0
-        self.skip = 0          # <script>/<style>/Zitat-Kopfzeile
+        self.skip = 0          # <script>/<style>
 
     # ---- Hilfen
     def _nl(self) -> None:
@@ -40,6 +43,7 @@ class _Text(HTMLParser):
         elif tag == "blockquote":
             self._nl()
             self.quote += 1
+            self.out.append(_QUOTE_START + "\n")
         elif tag == "cite":
             self._nl()
             self.out.append("┌ ")
@@ -66,6 +70,7 @@ class _Text(HTMLParser):
         elif tag == "blockquote":
             self.quote = max(0, self.quote - 1)
             self._nl()
+            self.out.append(_QUOTE_END + "\n")
         elif tag == "cite":
             self.out.append("\n")
         elif tag == "a":
@@ -110,23 +115,22 @@ def html_to_text(fragment: str) -> str:
     p.feed(fragment)
     p.close()
     txt = p.text()
-    # Zitate als „> " einrücken: phpBB verschachtelt <blockquote>, wir markieren
-    # den Beginn mit ┌ und rücken bis zur nächsten Leerzeile ein.
-    out, in_quote = [], False
+    # Preserve phpBB's localized cite text and use the actual blockquote
+    # boundaries, rather than guessing where a quote ends from blank lines.
+    out, depth = [], 0
     for line in txt.split("\n"):
-        # phpBB trennt Absätze mit <br />\n – daraus bleibt ein führendes
-        # Leerzeichen stehen. Bis zu zwei davon weg; tiefere Einrückung
-        # (Code, Aufzählungen) bleibt erhalten.
+        # phpBB separates paragraphs with <br /> followed by whitespace.
         line = re.sub(r"^ {1,2}(?=\S)", "", line)
+        if line == _QUOTE_START:
+            depth += 1
+            continue
+        if line == _QUOTE_END:
+            depth = max(0, depth - 1)
+            continue
         if line.startswith("┌ "):
-            in_quote = True
-            out.append("│ " + line[2:] + " schrieb:")
-        elif in_quote and line.strip():
-            out.append("│ " + line)
-        else:
-            in_quote = False
-            out.append(line)
-    return "\n".join(out)
+            line = line[2:]
+        out.append("│ " * depth + line if depth and line.strip() else line)
+    return "\n".join(out).strip()
 
 
 # --------------------------------------------------------------------------
