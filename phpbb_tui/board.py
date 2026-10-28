@@ -12,11 +12,13 @@ from __future__ import annotations
 import html
 import os
 import re
+import tempfile
 import time
 from dataclasses import dataclass, field
+from email.message import Message
 from http.cookiejar import MozillaCookieJar
 from pathlib import Path
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, urljoin, urlsplit
 
 import requests
 
@@ -487,6 +489,18 @@ class Board:
                             or re.search(r"<title>(.*?)</title>", page, re.S)
                             or [None, ""])[1])
         fid = int((re.search(r'viewforum\.php\?f=(\d+)', page) or [0, 0])[1])
+        # Breadcrumbs run from the parent category to the actual forum.
+        # Ignore forum links elsewhere, retaining the legacy fallback when
+        # a style does not expose forum breadcrumbs.
+        for crumb in re.finditer(r'<li\b[^>]*class="([^"]*)"[^>]*>(.*?)</li>',
+                                 page, re.S):
+            if "breadcrumbs" not in crumb[1].split():
+                continue
+            forums = re.findall(
+                r'viewforum\.php\?(?:[^"#]*&(?:amp;)?)?f=([0-9]+)(?=[&#"])',
+                crumb[2])
+            if forums:
+                fid = int(forums[-1])
         th = Thread(tid=tid, title=title, forum_id=fid, start=start)
         for m in re.finditer(r'<div id="p(\d+)" class="post[^"]*">(.*?)(?=<div id="p\d+" '
                              r'class="post|<div class="action-bar bar-bottom|$)', page, re.S):
@@ -523,11 +537,15 @@ class Board:
                 continue
             gesehen.add(aid)
             name = re.search(r'download/file\.php\?id=\d+[^"]*"[^>]*>(.*?)</a>', teil, re.S)
-            alt = re.search(r'alt="([^"]+)"', teil)
+            alt = re.search(r'alt="([^"]+)"',
+                            name.group(1) if name else teil)
+            filename = strip_tags(name.group(1)) if name else ""
+            if not filename and alt:
+                filename = unescape(alt.group(1))
             groesse = re.search(r"\(([\d.,]+\s*[KMG]?i?B)\)", strip_tags(teil))
             out.append(Anhang(
                 aid=aid,
-                name=strip_tags(name.group(1)) if name else (alt.group(1) if alt else f"Datei {aid}"),
+                name=filename or f"Datei {aid}",
                 groesse=groesse.group(1) if groesse else "",
                 bild="thumbnail" in teil or "image" in teil,
             ))
@@ -538,19 +556,38 @@ class Board:
         ziel_ordner.mkdir(parents=True, exist_ok=True)
         r = self.s.get(f"{self.base}/download/file.php", params={"id": anhang.aid},
                        timeout=120, stream=True)
-        r.raise_for_status()
-        name = anhang.name or f"anhang-{anhang.aid}"
-        # Dateiname aus dem Kopf bevorzugen, er ist verlässlicher
-        cd = r.headers.get("Content-Disposition", "")
-        m = re.search(r'filename\*?=(?:UTF-8\'\')?"?([^";]+)"?', cd)
-        if m:
-            name = unescape(m.group(1))
-        name = re.sub(r"[/\\]", "_", name).strip() or f"anhang-{anhang.aid}"
-        ziel = ziel_ordner / name
-        with open(ziel, "wb") as f:
-            for stueck in r.iter_content(65536):
-                f.write(stueck)
-        return ziel
+        temporary = None
+        try:
+            r.raise_for_status()
+            header = Message()
+            header["Content-Disposition"] = r.headers.get(
+                "Content-Disposition", "")
+            filename = header.get_filename()
+            content_type = r.headers.get("Content-Type", "").split(";")[0].lower()
+            if (not filename and content_type
+                    in ("text/html", "application/xhtml+xml")):
+                raise BoardError("HTML page returned instead of an attachment")
+            name = filename or anhang.name or f"anhang-{anhang.aid}"
+            name = re.sub(r"[/\\\x00-\x1f\x7f]", "_", name).strip()
+            if name in ("", ".", ".."):
+                name = f"anhang-{anhang.aid}"
+            ziel = ziel_ordner / name
+            if ziel.is_symlink() or (ziel.exists() and not ziel.is_file()):
+                raise BoardError("Attachment destination is not a regular file")
+            fd, temporary = tempfile.mkstemp(prefix=".phpbb-tui-", dir=ziel_ordner)
+            with os.fdopen(fd, "wb") as f:
+                for stueck in r.iter_content(65536):
+                    f.write(stueck)
+            if ziel.is_symlink() or (ziel.exists() and not ziel.is_file()):
+                raise BoardError("Attachment destination is not a regular file")
+            os.replace(temporary, ziel)
+            return ziel
+        finally:
+            try:
+                if temporary is not None:
+                    Path(temporary).unlink(missing_ok=True)
+            finally:
+                r.close()
 
     # -- Schreiben ---------------------------------------------------------
 
@@ -636,6 +673,36 @@ class Board:
                 return txt
         return ""
 
+    def pm_submission_id(self, page: str) -> int | None:
+        """Identify a successful PM confirmation by its same-board view URL."""
+        if (not re.search(r'\bid="message"', page)
+                or re.search(r'<form\b[^>]*\bid="postform"', page)):
+            return None
+        base = urlsplit(self.base)
+        for tag in re.findall(r"<meta\b[^>]*>", page, re.I):
+            if not re.search(r'http-equiv="refresh"', tag, re.I):
+                continue
+            content = re.search(r'content="([^"]+)"', tag, re.I)
+            if not content:
+                continue
+            parts = re.split(r"\burl=", content[1], maxsplit=1, flags=re.I)
+            if len(parts) != 2:
+                continue
+            try:
+                address = urlsplit(urljoin(self.base + "/", unescape(parts[1])))
+            except ValueError:
+                continue
+            if (address.scheme, address.netloc, address.path) != (
+                    base.scheme, base.netloc, base.path.rstrip("/") + "/ucp.php"):
+                continue
+            query = parse_qs(address.query)
+            values = query.get("p", [])
+            if (query.get("i") == ["pm"] and query.get("mode") == ["view"]
+                    and len(values) == 1 and re.fullmatch(r"[0-9]+", values[0])
+                    and int(values[0]) > 0):
+                return int(values[0])
+        return None
+
     def submission_success(self, page: str) -> tuple[bool, str]:
         """Recognize positive confirmations without saving diagnostic HTML."""
         if re.search(r"wurde erfolgreich|successfully (?:posted|submitted|edited)",
@@ -683,6 +750,8 @@ class Board:
         success, message = self.submission_success(page)
         if success:
             return success, message
+        if self.pm_submission_id(page) is not None:
+            return True, t("pm_gesendet_kurz")
         fehler = self._fehlertext(page)
         if fehler:
             return False, fehler
@@ -825,7 +894,12 @@ class Board:
         if not m:
             raise BoardError(t("formular_fehlt", id="confirm"))
         daten = form_fields(page, "confirm")
-        daten["confirm"] = "Ja"
+        button = re.search(r'<(?:input|button)\b[^>]*\bname="confirm"[^>]*>',
+                           m.group(0))
+        value = re.search(r'\bvalue="([^"]+)"', button[0]) if button else None
+        if not value:
+            raise BoardError(t("formular_fehlt", id="confirm"))
+        daten["confirm"] = unescape(value[1])
         # Die Rückfrage trägt ihren Schlüssel in der Adresse, nicht im Formular.
         r = self.s.post(f"{self.base}/{unescape(m.group(1)).lstrip('./')}",
                         data=daten, timeout=60)
