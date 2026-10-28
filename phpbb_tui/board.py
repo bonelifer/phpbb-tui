@@ -16,6 +16,7 @@ import time
 from dataclasses import dataclass, field
 from http.cookiejar import MozillaCookieJar
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 import requests
 
@@ -216,6 +217,7 @@ class Board:
         self.s.headers["User-Agent"] = USER_AGENT
         self.username = ""
         self.pm_neu = 0          # ungelesene private Nachrichten
+        self.last_post_url = ""
 
     # -- unterste Ebene ----------------------------------------------------
 
@@ -259,6 +261,7 @@ class Board:
             return self.s.get(f"{self.base}/{path}", params=params, timeout=30)
 
     def get(self, path: str, **params) -> str:
+        self.last_post_url = ""
         # Netzfehler kommen als BoardError heraus, damit die Oberfläche sie
         # wie jeden anderen Fehler in der Fußzeile zeigt, statt abzustürzen.
         try:
@@ -270,6 +273,7 @@ class Board:
         return r.text
 
     def post(self, path: str, data: dict, files: dict | None = None, **params) -> str:
+        self.last_post_url = ""
         self._formular_reifen(data)
         try:
             r = self.s.post(f"{self.base}/{path}", params=params or None,
@@ -277,6 +281,8 @@ class Board:
             r.raise_for_status()
         except requests.RequestException as fehler:
             raise BoardError(t("netz_fehler", fehler=fehler)) from fehler
+        if r.history and isinstance(r.url, str):
+            self.last_post_url = r.url
         self._save()
         return r.text
 
@@ -630,15 +636,53 @@ class Board:
                 return txt
         return ""
 
-    def submit_result(self, page: str) -> tuple[bool, str]:
-        """(erfolgreich, Meldung). Erst positiv prüfen: ein bloßes
-        `class="error"` steht auch im Gerüst von Erfolgsseiten."""
+    def submission_success(self, page: str) -> tuple[bool, str]:
+        """Recognize positive confirmations without saving diagnostic HTML."""
         if re.search(r"wurde erfolgreich|successfully (?:posted|submitted|edited)",
                      page, re.I):
             return True, t("beitrag_da")
         weiter = re.search(r'<meta http-equiv="refresh"[^>]*viewtopic\.php[^"]*#p(\d+)', page)
         if weiter:
             return True, t("beitrag_da_nr", pid=weiter.group(1))
+        pid = self._redirected_post_id(page)
+        if pid:
+            return True, t("beitrag_da_nr", pid=pid)
+        return False, ""
+
+    def _redirected_post_id(self, page: str) -> int | None:
+        """Confirm a redirected post only on the configured board's thread."""
+        address = urlsplit(getattr(self, "last_post_url", ""))
+        base = urlsplit(self.base)
+        if (address.scheme, address.netloc, address.path) != (
+                base.scheme, base.netloc,
+                base.path.rstrip("/") + "/viewtopic.php"):
+            return None
+        fragment = re.fullmatch(r"p([0-9]+)", address.fragment)
+        query = parse_qs(address.query)
+        values = query.get("p", [])
+        value = fragment[1] if fragment else (
+            values[0] if len(values) == 1 else "")
+        if not value and len(query.get("t", [])) == 1:
+            # A newly created topic redirects to t=ID without a post fragment.
+            # Only a single visible post identifies its first post reliably.
+            topic_id = query["t"][0]
+            posts = set(re.findall(r'<div id="p(\d+)" class="post\b', page))
+            if (re.fullmatch(r"[0-9]+", topic_id) and int(topic_id) > 0
+                    and len(posts) == 1):
+                value = posts.pop()
+        if not re.fullmatch(r"[0-9]+", value) or int(value) < 1:
+            return None
+        pid = int(value)
+        if re.search(fr'<div id="p{pid}" class="post\b', page):
+            return pid
+        return None
+
+    def submit_result(self, page: str) -> tuple[bool, str]:
+        """(erfolgreich, Meldung). Erst positiv prüfen: ein bloßes
+        `class="error"` steht auch im Gerüst von Erfolgsseiten."""
+        success, message = self.submission_success(page)
+        if success:
+            return success, message
         fehler = self._fehlertext(page)
         if fehler:
             return False, fehler
