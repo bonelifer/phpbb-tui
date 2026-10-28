@@ -50,6 +50,11 @@ server administration), and every board renders its own HTML. A client aiming
 at *all* phpBB boards breaks on the next theme update. This one aims at the
 subset every prosilver-derived board shares, which in practice is most of them.
 
+## Tests
+
+Run the offline regression suite with `python3 -m unittest discover -s tests`.
+See [tests/README.md](tests/README.md) for its scope and limitations.
+
 ## Install
 
 Python 3.11+ and `requests`. Nothing else — the interface uses `curses` from
