@@ -5,6 +5,10 @@ HTML parsers. They do not initialize curses, open an editor or browser, or ask
 for missing input. Python 3.11+ and the existing `requests` dependency are
 required. No additional runtime or test dependency is introduced.
 
+For `post`, `reply`, and `edit`, see the [posting reference](posting.md).
+Those commands share the output/session conventions here and add explicit
+body input, dry-run, preview, and submission outcome handling.
+
 ## Commands
 
 ```sh
@@ -201,6 +205,7 @@ The CLI tests use synthetic HTML and mocked requests to verify argument
 validation, search dispatch, pagination, guest isolation, JSON/error handling,
 and command-name compatibility. They do not require a public board account.
 
-This stage implements forums, topics, thread reading, and searches. Posting,
-PM commands, attachment transfer, previews, and dry-run commands remain future
-stages. Attachment metadata already parsed in thread reads is included.
+The read commands implement forums, topics, thread reading, and searches.
+[Posting commands](posting.md) provide new topics, replies, quotes, edits,
+preview, and dry-run. PM commands and attachment transfer remain future stages.
+Attachment metadata already parsed in thread reads is included.

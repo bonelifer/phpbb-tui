@@ -68,7 +68,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if argv and argv[0] in ("-h", "--help", "hilfe", "help"):
         print(hilfetext())
-        print("\nAutomation: phpbb-tui {forums,topics,topic,search} --help")
+        commands = ",".join(cli.COMMANDS)
+        print(f"\nAutomation: phpbb-tui {{{commands}}} --help")
         print("TUI: phpbb-tui tui <board> [--guest]")
         return 0
 

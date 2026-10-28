@@ -1,4 +1,4 @@
-"""Non-interactive, read-only commands sharing the existing Board client."""
+"""Non-interactive commands sharing the existing Board client."""
 
 from __future__ import annotations
 
@@ -14,22 +14,16 @@ from urllib.parse import parse_qs, urlsplit
 import requests
 
 from . import config
+from . import posting
 from .board import Anhang, Board, BoardError, Forum, LoginRequired, Post, Topic
+from .command_error import CommandError
 
 
-COMMANDS = ("forums", "topics", "topic", "search")
+READ_COMMANDS = ("forums", "topics", "topic", "search")
+COMMANDS = READ_COMMANDS + posting.COMMANDS
 SEARCHES = {"unread": "unreadposts", "new": "newposts",
             "mine": "egosearch", "active": "active_topics",
             "unanswered": "unanswered"}
-
-
-class CommandError(Exception):
-    """An expected failure with a stable machine code and exit status."""
-
-    def __init__(self, code: str, message: str, status: int = 2):
-        super().__init__(message)
-        self.code = code
-        self.status = status
 
 
 class Parser(argparse.ArgumentParser):
@@ -60,12 +54,15 @@ def parser() -> Parser:
     for name in COMMANDS:
         command = commands.add_parser(name, allow_abbrev=False)
         command.add_argument("board", help="configured board name or slug")
-        command.add_argument("-g", "--guest", action="store_true",
-                             help="use an isolated anonymous session")
+        if name in READ_COMMANDS:
+            command.add_argument("-g", "--guest", action="store_true",
+                                 help="use an isolated anonymous session")
+        else:
+            command.set_defaults(guest=False)
         output = command.add_mutually_exclusive_group()
         output.add_argument("-j", "--json", action="store_true")
         output.add_argument("-q", "--quiet", action="store_true")
-        if name != "forums":
+        if name in ("topics", "topic", "search"):
             command.add_argument("-p", "--page", type=positive, default=1)
         if name in ("forums", "topics", "search"):
             command.add_argument("-F", "--filter", default="",
@@ -80,6 +77,8 @@ def parser() -> Parser:
                 modes.add_argument("--" + mode, dest="mode",
                                    action="store_const", const=mode)
             modes.add_argument("-s", "--query")
+        elif name in posting.COMMANDS:
+            posting.arguments(command, name, positive)
     return root
 
 
@@ -270,6 +269,14 @@ def read(board: ReadBoard, args: argparse.Namespace) -> dict:
 def human(data: dict) -> str:
     """Render data without making human wording part of the machine API."""
     lines = []
+    if "submitted" in data:
+        if data.get("dry_run"):
+            return f"Validated {data['action']}: {data['subject']}\n" + data[
+                "body_bbcode"]
+        if data.get("preview"):
+            return f"Preview: {data['subject']}\n" + data["preview_text"]
+        return f"Submitted {data['action']}" + (
+            ": " + data["url"] if data.get("url") else "")
     if "title" in data:
         lines.append(data["title"])
     for forum in data.get("forums", []):
@@ -309,6 +316,8 @@ def main(argv: list[str]) -> int:
     json_output = "--json" in argv or "-j" in argv
     try:
         args = parser().parse_args(argv)
+        body = (posting.body_input(args)
+                if args.command in posting.COMMANDS else "")
         if args.command == "search" and args.query is not None:
             if not args.query.strip():
                 raise CommandError(
@@ -343,7 +352,10 @@ def main(argv: list[str]) -> int:
             try:
                 if not args.guest and not board.logged_in():
                     raise LoginRequired()
-                data = read(board, args)
+                if args.command in posting.COMMANDS:
+                    data = posting.write(board, args, body)
+                else:
+                    data = read(board, args)
             finally:
                 board.s.close()
         data = {"success": True, "action": args.command, "board": bc.name,
