@@ -8,6 +8,8 @@ required. No additional runtime or test dependency is introduced.
 For `post`, `reply`, and `edit`, see the [posting reference](posting.md).
 Those commands share the output/session conventions here and add explicit
 body input, dry-run, preview, and submission outcome handling.
+The [PM reference](private-messages.md) covers mailbox reads, sending, replies,
+quotes, and deletion with explicit confirmation.
 
 ## Commands
 
@@ -159,7 +161,7 @@ resource from one hidden by permissions; those responses use status 8.
 `logout`, and `status` commands keep their established behavior. Their
 interactive guest aliases (`--guest`, `--gast`) remain available.
 
-A configured board named `forums`, `topics`, `topic`, or `search` still opens
+A configured board named after an automation command still opens
 interactively when invoked alone, optionally with an existing guest alias.
 Automation is selected when additional command arguments are present:
 
@@ -207,5 +209,6 @@ and command-name compatibility. They do not require a public board account.
 
 The read commands implement forums, topics, thread reading, and searches.
 [Posting commands](posting.md) provide new topics, replies, quotes, edits,
-preview, and dry-run. PM commands and attachment transfer remain future stages.
+preview, and dry-run. [PM commands](private-messages.md) cover mailbox reads,
+sending, replies, quotes, and deletion. Attachment transfer remains a future stage.
 Attachment metadata already parsed in thread reads is included.

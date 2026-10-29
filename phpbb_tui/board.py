@@ -888,6 +888,10 @@ class Board:
         e.empfaenger = self._pm_empfaenger(seite)
 
     def pm_loeschen(self, mid: int, fid: int = 0) -> None:
+        self.pm_loeschen_result(mid, fid)
+
+    def pm_loeschen_result(self, mid: int, fid: int = 0) -> str:
+        """Delete through the existing confirmation flow and return its response."""
         page = self.get("ucp.php", i="pm", mode="compose", action="delete", f=fid, p=mid)
         self.require_login(page)
         m = re.search(r'<form[^>]*id="confirm"[^>]*action="([^"]*)".*?</form>', page, re.S)
@@ -908,6 +912,7 @@ class Board:
         fehler = self._fehlertext(r.text)
         if fehler:
             raise BoardError(fehler)
+        return r.text
 
     @staticmethod
     def _pm_badge(page: str) -> int:

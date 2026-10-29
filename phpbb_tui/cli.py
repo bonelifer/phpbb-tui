@@ -15,12 +15,14 @@ import requests
 
 from . import config
 from . import posting
+from . import private_messages
 from .board import Anhang, Board, BoardError, Forum, LoginRequired, Post, Topic
 from .command_error import CommandError
 
 
 READ_COMMANDS = ("forums", "topics", "topic", "search")
-COMMANDS = READ_COMMANDS + posting.COMMANDS
+COMMANDS = READ_COMMANDS + posting.COMMANDS + private_messages.COMMANDS
+BODY_COMMANDS = posting.COMMANDS + private_messages.WRITE_COMMANDS
 SEARCHES = {"unread": "unreadposts", "new": "newposts",
             "mine": "egosearch", "active": "active_topics",
             "unanswered": "unanswered"}
@@ -79,6 +81,8 @@ def parser() -> Parser:
             modes.add_argument("-s", "--query")
         elif name in posting.COMMANDS:
             posting.arguments(command, name, positive)
+        elif name in private_messages.COMMANDS:
+            private_messages.arguments(command, name, positive)
     return root
 
 
@@ -91,6 +95,11 @@ class ReadBoard(Board):
         self.page_path = path
         self.page_params = params
         self.page_html = super().get(path, **params)
+        return self.page_html
+
+    def post(self, path: str, data: dict, files: dict | None = None,
+             **params) -> str:
+        self.page_html = super().post(path, data, files=files, **params)
         return self.page_html
 
 
@@ -268,6 +277,8 @@ def read(board: ReadBoard, args: argparse.Namespace) -> dict:
 
 def human(data: dict) -> str:
     """Render data without making human wording part of the machine API."""
+    if data["action"] in private_messages.COMMANDS:
+        return private_messages.human(data)
     lines = []
     if "submitted" in data:
         if data.get("dry_run"):
@@ -316,8 +327,10 @@ def main(argv: list[str]) -> int:
     json_output = "--json" in argv or "-j" in argv
     try:
         args = parser().parse_args(argv)
+        if args.command in private_messages.COMMANDS:
+            private_messages.validate(args)
         body = (posting.body_input(args)
-                if args.command in posting.COMMANDS else "")
+                if args.command in BODY_COMMANDS else "")
         if args.command == "search" and args.query is not None:
             if not args.query.strip():
                 raise CommandError(
@@ -354,6 +367,8 @@ def main(argv: list[str]) -> int:
                     raise LoginRequired()
                 if args.command in posting.COMMANDS:
                     data = posting.write(board, args, body)
+                elif args.command in private_messages.COMMANDS:
+                    data = private_messages.run(board, args, body, pagination)
                 else:
                     data = read(board, args)
             finally:
@@ -382,6 +397,10 @@ def main(argv: list[str]) -> int:
             elif status == 403:
                 error = CommandError(
                     "permission_denied", "Permission denied", 8)
+            elif status == 503 and args.command in private_messages.COMMANDS:
+                error = CommandError(
+                    "operation_unavailable",
+                    "Private messaging is unavailable", 8)
             else:
                 error = CommandError(
                     "network_error", "Could not read from board", 9)
