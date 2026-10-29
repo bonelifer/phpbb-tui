@@ -107,6 +107,9 @@ Vim keys throughout:
 | `f` | next mailbox (inbox → sent → outbox) |
 | `d` | delete the message under the cursor |
 
+For lost or unrecognized send confirmations, see
+[TUI submission outcomes](docs/tui-submissions.md) before retrying.
+
 ## Non-interactive / Automation
 
 Read and write without entering curses, opening an editor or browser, or answering

@@ -10,6 +10,16 @@ import os
 
 TEXTE: dict[str, dict[str, str]] = {
     "de": {
+        "senden_unklar_titel": "Ergebnis des Sendens unklar",
+        "senden_unklar": (
+            "Der Beitrag oder die Nachricht wurde möglicherweise bereits "
+            "gespeichert. Vor erneutem Senden das Thema oder den "
+            "Postausgang prüfen. Nicht blind erneut senden."),
+        "senden_keine_verbindung": (
+            "Keine Verbindung; es wurde nichts gesendet."),
+        "senden_abgelehnt": "Der Server hat die Anfrage abgelehnt.",
+        "senden_formular": (
+            "Das Forum hat das Formular ohne Bestätigung zurückgegeben."),
         # Hilfezeilen
         "such_ungelesen": "Ungelesene Beiträge",
         "such_neu": "Neue Beiträge seit letztem Besuch",
@@ -122,6 +132,14 @@ TEXTE: dict[str, dict[str, str]] = {
         "cli_aufruf_add": "Aufruf: phpbb-tui add https://forum.example.org/forum",
     },
     "en": {
+        "senden_unklar_titel": "Submission outcome unknown",
+        "senden_unklar": (
+            "The post or message may already have been saved. Check "
+            "the topic or PM outbox before sending again. Do not "
+            "retry without checking."),
+        "senden_keine_verbindung": "Could not connect; nothing was submitted.",
+        "senden_abgelehnt": "The server rejected the request.",
+        "senden_formular": "The board returned the form without confirmation.",
         "such_ungelesen": "Unread posts",
         "such_neu": "New posts since last visit",
         "such_eigene": "My posts",

@@ -19,6 +19,7 @@ from .board import (PM_ORDNER, SUCHEN, Anhang, Board, BoardError, Entwurf,
 from .config import Config
 from .i18n import t
 from .markup import bbcode_to_md, md_to_bbcode
+from . import tui_submission
 
 
 C_KOPF, C_NEU, C_AUTOR, C_DATUM, C_HILFE, C_ZITAT, C_AUSWAHL, C_WARN, C_ANHANG = range(1, 10)
@@ -569,14 +570,18 @@ class Oberflaeche:
 
             if wahl == "a":
                 self.warten(t("sendet"))
-                try:
-                    seite = self.b.submit(e, betreff, bb)
-                    ok, meldung = self.b.submit_result(seite)
-                except Exception as fehler:
-                    ok, meldung = False, str(fehler)
-                self.meldung = erfolg if (ok and erfolg) else meldung
-                if ok:
+                outcome, meldung = tui_submission.submit(
+                    self.b, e, betreff, bb)
+                self.meldung = (erfolg if outcome == "success" and erfolg
+                                else meldung)
+                if outcome == "success":
                     return True
+                if outcome == "uncertain":
+                    self.seite_zeigen(t("senden_unklar_titel"),
+                                      textwrap.wrap(
+                                          meldung, max(20, self.breite - 4)),
+                                      t("hilfe_zurueck"))
+                    return False
                 if not self.bestaetigen(t("nochmal_bearbeiten", meldung=meldung)):
                     return False
                 vorlage = text
