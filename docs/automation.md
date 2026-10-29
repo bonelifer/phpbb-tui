@@ -10,6 +10,7 @@ Those commands share the output/session conventions here and add explicit
 body input, dry-run, preview, and submission outcome handling.
 The [PM reference](private-messages.md) covers mailbox reads, sending, replies,
 quotes, and deletion with explicit confirmation.
+The [attachment reference](attachments.md) covers listing, downloads, and uploads.
 
 ## Commands
 
@@ -210,5 +211,5 @@ and command-name compatibility. They do not require a public board account.
 The read commands implement forums, topics, thread reading, and searches.
 [Posting commands](posting.md) provide new topics, replies, quotes, edits,
 preview, and dry-run. [PM commands](private-messages.md) cover mailbox reads,
-sending, replies, quotes, and deletion. Attachment transfer remains a future stage.
-Attachment metadata already parsed in thread reads is included.
+sending, replies, quotes, and deletion. [Attachment commands](attachments.md)
+provide scoped listing, safe downloads, and uploads where the form permits them.

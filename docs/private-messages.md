@@ -64,8 +64,9 @@ and tokens. It does not prove that the server will accept the final content.
 
 `--preview` (`-v`) resolves recipients, requests phpBB's preview, and returns
 rendered plain text without final sending. Preview and dry-run are mutually
-exclusive. Both may update ordinary session state. CLI attachment transfer
-is not included; the existing TUI attachment workflow remains available.
+exclusive. Both may update ordinary session state. Repeated `--attach FILE`
+options add files where the PM form permits them; see the
+[attachment reference](attachments.md). The TUI workflow remains available.
 
 ## Deletion
 
@@ -108,7 +109,8 @@ preview adds `preview: true`, `preview_text`, and `submitted: false`.
 
 Confirmed-send URLs omit session parameters. IDs come from the server's
 confirmation; an unrecognized result never produces an invented message ID.
-Attachment metadata follows the read-only schema; transfer remains future work.
+Attachment metadata follows the read-only schema; transfer is documented in the
+[attachment reference](attachments.md).
 
 ## Failures and write uncertainty
 

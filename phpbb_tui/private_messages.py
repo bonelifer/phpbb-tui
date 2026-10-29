@@ -10,6 +10,7 @@ from urllib.parse import parse_qs, urljoin, urlsplit
 import requests
 
 from . import posting
+from . import attachments
 from .board import Board, BoardError, Entwurf, LoginRequired, unescape
 from .command_error import CommandError
 from .markup import bbcode_to_md, md_to_bbcode
@@ -141,6 +142,9 @@ def send(board: Board, args: argparse.Namespace, body: str) -> dict:
     message = md_to_bbcode(body)
     result = {"subject": subject, "recipients": form.empfaenger,
               "submitted": False}
+    if args.attach:
+        result["attachments"] = attachments.upload(
+            board, form, args.attach, args.dry_run)
     if args.command == "pm-reply":
         result["in_reply_to"] = args.message
     if args.dry_run:
