@@ -10,6 +10,8 @@ import os
 
 TEXTE: dict[str, dict[str, str]] = {
     "de": {
+        "navigation_fehlt": (
+            "Keine eindeutige Seitennavigation vom Forum erhalten."),
         # Hilfezeilen
         "such_ungelesen": "Ungelesene Beiträge",
         "such_neu": "Neue Beiträge seit letztem Besuch",
@@ -122,6 +124,7 @@ TEXTE: dict[str, dict[str, str]] = {
         "cli_aufruf_add": "Aufruf: phpbb-tui add https://forum.example.org/forum",
     },
     "en": {
+        "navigation_fehlt": "The board did not provide clear page navigation.",
         "such_ungelesen": "Unread posts",
         "such_neu": "New posts since last visit",
         "such_eigene": "My posts",
