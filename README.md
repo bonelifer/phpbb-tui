@@ -107,6 +107,9 @@ Vim keys throughout:
 | `f` | next mailbox (inbox → sent → outbox) |
 | `d` | delete the message under the cursor |
 
+Attachment downloads support `S` for save-as and confirmation before
+[replacing existing files](docs/tui-downloads.md).
+
 ## Non-interactive / Automation
 
 Read and write without entering curses, opening an editor or browser, or answering

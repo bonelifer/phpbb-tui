@@ -9,6 +9,7 @@ prosilver-HTML; ausgewertet wird mit `re` und `html.parser`.
 
 from __future__ import annotations
 
+import errno
 import html
 import os
 import re
@@ -575,7 +576,9 @@ class Board:
                 name = f"anhang-{anhang.aid}"
             ziel = Path(target) if target is not None else ziel_ordner / name
             if not overwrite and os.path.lexists(ziel):
-                raise FileExistsError("Attachment destination already exists")
+                raise FileExistsError(
+                    errno.EEXIST, "Attachment destination already exists",
+                    str(ziel))
             if ziel.is_symlink() or (ziel.exists() and not ziel.is_file()):
                 raise BoardError("Attachment destination is not a regular file")
             fd, temporary = tempfile.mkstemp(prefix=".phpbb-tui-", dir=ziel_ordner)
@@ -588,7 +591,12 @@ class Board:
                 os.replace(temporary, ziel)
             else:
                 # Publishing by hard link fails atomically if a file appeared.
-                os.link(temporary, ziel)
+                try:
+                    os.link(temporary, ziel)
+                except FileExistsError as cause:
+                    raise FileExistsError(
+                        errno.EEXIST, "Attachment destination already exists",
+                        str(ziel)) from cause
             return ziel
         finally:
             try:

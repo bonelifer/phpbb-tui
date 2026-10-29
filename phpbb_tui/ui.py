@@ -476,21 +476,62 @@ class Oberflaeche:
                       for a in liste]
             taste, pos = self.liste(
                 t("anhaenge_von", autor=autor), zeilen,
-                t("hilfe_anhaenge"), tasten="s", start=pos)
+                t("hilfe_anhaenge"), tasten="sS", start=pos)
             if taste == "q":
                 return
-            if taste in ("\n", "s") and liste:
+            if taste in ("\n", "s", "S") and liste:
                 anh = liste[pos]
                 self.warten(t("laedt_datei", name=anh.name))
                 try:
-                    ziel = self.b.anhang_laden(anh, self.cfg.downloads)
+                    ordner, target = self.cfg.downloads, None
+                    if taste == "S":
+                        antwort = self.frage(t("download_ziel"))
+                        if not antwort:
+                            continue
+                        path = Path(antwort).expanduser()
+                        if path.is_symlink():
+                            raise BoardError(t("download_unsicher"))
+                        if antwort.endswith(os.sep) or path.is_dir():
+                            ordner = path
+                        else:
+                            ordner, target = path.parent, path
+                    ziel = self._anhang_speichern(anh, ordner, target)
+                    if ziel is None:
+                        continue
                 except Exception as e:
                     self.meldung = t("fehler_download", fehler=e)
                     continue
-                if taste == "s":
+                if taste in ("s", "S"):
                     self.meldung = t("gespeichert", pfad=ziel)
                 else:
                     self.oeffnen(str(ziel))
+
+    def _anhang_speichern(self, anh: Anhang, ordner: Path,
+                          target: Path | None = None) -> Path | None:
+        """Require confirmation before replacing a downloaded file."""
+        try:
+            return self.b.anhang_laden(
+                anh, ordner, target=target, overwrite=False)
+        except FileExistsError as fehler:
+            if not fehler.filename:
+                raise
+            path = Path(fehler.filename)
+            if path.is_symlink() or not path.is_file():
+                raise BoardError(t("download_unsicher")) from fehler
+            if not self._download_ersetzen(path):
+                self.meldung = t("download_abgebrochen")
+                return None
+            return self.b.anhang_laden(
+                anh, path.parent, target=path, overwrite=True)
+
+    def _download_ersetzen(self, path: Path) -> bool:
+        """Show and wrap the full destination before confirmation."""
+        choice = self.seite_zeigen(
+            t("download_bestaetigen"),
+            textwrap.wrap(t("download_ersetzen", pfad=path),
+                          max(20, self.breite - 4)),
+            t("ja_nein") + " · q", tasten="yjn")
+        return choice in ("y", "j")
 
     # -- Schreiben ---------------------------------------------------------
 

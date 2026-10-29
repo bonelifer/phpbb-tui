@@ -10,6 +10,11 @@ import os
 
 TEXTE: dict[str, dict[str, str]] = {
     "de": {
+        "download_bestaetigen": "Datei ersetzen?",
+        "download_ziel": "Zieldatei oder Ordner/ (leer = Abbrechen): ",
+        "download_ersetzen": "Vorhandene Datei {pfad} ersetzen?",
+        "download_abgebrochen": "Download abgebrochen; Datei unverändert",
+        "download_unsicher": "Ziel ist keine reguläre Datei.",
         # Hilfezeilen
         "such_ungelesen": "Ungelesene Beiträge",
         "such_neu": "Neue Beiträge seit letztem Besuch",
@@ -45,7 +50,8 @@ TEXTE: dict[str, dict[str, str]] = {
                          "e Bearbeiten · a Anhänge · o Browser · q Zurück"),
         "hilfe_vorschau": ("a Absenden · d Datei anhängen · x Anhang entfernen · "
                            "b Bearbeiten · q Verwerfen"),
-        "hilfe_anhaenge": "Enter Öffnen · s Nur speichern · q Zurück",
+        "hilfe_anhaenge": (
+            "Enter Öffnen · s Speichern · S Speichern unter · q Zurück"),
         "hilfe_zurueck": "q Zurück",
         # Zustände
         "laedt": "lädt …",
@@ -122,6 +128,11 @@ TEXTE: dict[str, dict[str, str]] = {
         "cli_aufruf_add": "Aufruf: phpbb-tui add https://forum.example.org/forum",
     },
     "en": {
+        "download_bestaetigen": "Replace file?",
+        "download_ziel": "Destination file or directory/ (blank = cancel): ",
+        "download_ersetzen": "Replace existing file {pfad}?",
+        "download_abgebrochen": "Download canceled; existing file unchanged",
+        "download_unsicher": "Destination is not a regular file.",
         "such_ungelesen": "Unread posts",
         "such_neu": "New posts since last visit",
         "such_eigene": "My posts",
@@ -153,7 +164,7 @@ TEXTE: dict[str, dict[str, str]] = {
         "hilfe_thread": ("j/k · Space/b page · J/K post · r reply · z quote · "
                          "e edit · a attachments · o browser · q back"),
         "hilfe_vorschau": "a send · d attach file · x remove attachment · b edit · q discard",
-        "hilfe_anhaenge": "Enter open · s save only · q back",
+        "hilfe_anhaenge": "Enter open · s save · S save as · q back",
         "hilfe_zurueck": "q back",
         "laedt": "loading …",
         "vorschau_laeuft": "preview …",
