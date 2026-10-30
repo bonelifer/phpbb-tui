@@ -110,6 +110,9 @@ Vim keys throughout:
 For lost or unrecognized send confirmations, see
 [TUI submission outcomes](docs/tui-submissions.md) before retrying.
 
+The existing `n`/`p` controls follow the board’s
+[pagination links](docs/tui-pagination.md).
+
 ## Non-interactive / Automation
 
 Read and write without entering curses, opening an editor or browser, or answering

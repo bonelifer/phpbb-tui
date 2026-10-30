@@ -20,6 +20,7 @@ from .config import Config
 from .i18n import t
 from .markup import bbcode_to_md, md_to_bbcode
 from . import tui_submission
+from .tui_pagination import navigation
 
 
 C_KOPF, C_NEU, C_AUTOR, C_DATUM, C_HILFE, C_ZITAT, C_AUSWAHL, C_WARN, C_ANHANG = range(1, 10)
@@ -274,6 +275,7 @@ class Oberflaeche:
     def themenliste(self, fid: int | None = None, such_id: str | None = None,
                     worte: str = "") -> None:
         start, pos, filter_text = 0, 0, ""
+        nav: dict[str, int] = {}
         themen: list[Topic] = []
         unterforen: list[Forum] = []
         kopf, seite, seiten = "", 1, 1
@@ -296,6 +298,9 @@ class Oberflaeche:
                 except BoardError as e:
                     self.meldung = str(e)
                     themen, unterforen = [], []
+                    nav = {}
+                else:
+                    nav = navigation(self.b, seite, seiten)
                 laden = False
                 pos = 0
 
@@ -321,12 +326,13 @@ class Oberflaeche:
 
             if taste == "q":
                 return
-            if taste == "n" and seite < seiten:
-                start += 50
-                laden = True
-            elif taste == "p" and start > 0:
-                start = max(0, start - 50)
-                laden = True
+            if taste in ("n", "p"):
+                if taste in nav:
+                    start = nav[taste]
+                    laden = True
+                elif ((taste == "n" and seite < seiten)
+                      or (taste == "p" and start > 0)):
+                    self.meldung = t("navigation_fehlt")
             elif taste == "R":
                 laden = True
             elif taste == "/":
@@ -348,6 +354,7 @@ class Oberflaeche:
     def thread_zeigen(self, tid: int) -> None:
         start, pos = 0, 0
         th: Thread | None = None
+        nav: dict[str, int] = {}
         laden = True
         zeilen: list[tuple[str, int, int]] = []
 
@@ -363,6 +370,7 @@ class Oberflaeche:
                 except BoardError as e:
                     self.meldung = str(e)
                     return
+                nav = navigation(self.b, th.page, th.pages)
                 zeilen = self._thread_zeilen(th)
                 laden = False
                 pos = 0
@@ -401,12 +409,14 @@ class Oberflaeche:
                 pos = self._sprung(zeilen, pos, +1)
             elif k == ord("K"):
                 pos = self._sprung(zeilen, pos, -1)
-            elif k == ord("n") and th.page < th.pages:
-                start += 15
-                laden = True
-            elif k == ord("p") and start > 0:
-                start = max(0, start - 15)
-                laden = True
+            elif k in (ord("n"), ord("p")):
+                key = chr(k)
+                if key in nav:
+                    start = nav[key]
+                    laden = True
+                elif ((key == "n" and th.page < th.pages)
+                      or (key == "p" and start > 0)):
+                    self.meldung = t("navigation_fehlt")
             elif k in (ord("R"), curses.KEY_F5):
                 laden = True
             elif k == ord("o"):
@@ -415,11 +425,11 @@ class Oberflaeche:
                 self.anhaenge(th.posts[akt].author, th.posts[akt].anhaenge)
             elif k == ord("r"):
                 if self.schreiben(mode="reply", tid=tid):
-                    start = max(0, (th.pages - 1) * 15)
+                    start = nav.get("last", start)
                     laden = True
             elif k == ord("z") and th.posts:
                 if self.schreiben(mode="quote", tid=tid, pid=th.posts[akt].pid):
-                    start = max(0, (th.pages - 1) * 15)
+                    start = nav.get("last", start)
                     laden = True
             elif k == ord("e") and th.posts:
                 p = th.posts[akt]
@@ -643,7 +653,7 @@ class Oberflaeche:
         start, pos, filter_text = 0, 0, ""
         nachrichten: list[Nachricht] = []
         kopf, voll, seite, seiten = "", "", 1, 1
-        schritt = 25
+        nav: dict[str, int] = {}
         laden = True
 
         while True:
@@ -658,11 +668,9 @@ class Oberflaeche:
                 except BoardError as fehler:
                     self.meldung = str(fehler)
                     nachrichten = []
-                # Wie viele Nachrichten auf eine Seite gehen, sagt das Board
-                # nirgends. Es füllt aber jede Seite bis auf die letzte ganz
-                # auf – also ist die erste volle Seite das Maß.
-                if seiten > 1 and nachrichten:
-                    schritt = max(schritt, len(nachrichten))
+                    nav = {}
+                else:
+                    nav = navigation(self.b, seite, seiten)
                 laden = False
                 pos = 0
 
@@ -687,12 +695,13 @@ class Oberflaeche:
                 ordner = namen[(namen.index(ordner) + 1) % len(namen)]
                 start, filter_text = 0, ""
                 laden = True
-            elif taste == "n" and seite < seiten:
-                start += schritt
-                laden = True
-            elif taste == "p" and start > 0:
-                start = max(0, start - schritt)
-                laden = True
+            elif taste in ("n", "p"):
+                if taste in nav:
+                    start = nav[taste]
+                    laden = True
+                elif ((taste == "n" and seite < seiten)
+                      or (taste == "p" and start > 0)):
+                    self.meldung = t("navigation_fehlt")
             elif taste == "R":
                 laden = True
             elif taste == "/":

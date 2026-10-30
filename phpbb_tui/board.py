@@ -272,6 +272,9 @@ class Board:
         except requests.RequestException as fehler:
             raise BoardError(t("netz_fehler", fehler=fehler)) from fehler
         self._save()
+        self.page_html = r.text
+        self.page_path = path
+        self.page_params = params
         return r.text
 
     def post(self, path: str, data: dict, files: dict | None = None, **params) -> str:

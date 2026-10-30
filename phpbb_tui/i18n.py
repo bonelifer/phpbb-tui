@@ -20,6 +20,8 @@ TEXTE: dict[str, dict[str, str]] = {
         "senden_abgelehnt": "Der Server hat die Anfrage abgelehnt.",
         "senden_formular": (
             "Das Forum hat das Formular ohne Bestätigung zurückgegeben."),
+        "navigation_fehlt": (
+            "Keine eindeutige Seitennavigation vom Forum erhalten."),
         # Hilfezeilen
         "such_ungelesen": "Ungelesene Beiträge",
         "such_neu": "Neue Beiträge seit letztem Besuch",
@@ -140,6 +142,7 @@ TEXTE: dict[str, dict[str, str]] = {
         "senden_keine_verbindung": "Could not connect; nothing was submitted.",
         "senden_abgelehnt": "The server rejected the request.",
         "senden_formular": "The board returned the form without confirmation.",
+        "navigation_fehlt": "The board did not provide clear page navigation.",
         "such_ungelesen": "Unread posts",
         "such_neu": "New posts since last visit",
         "such_eigene": "My posts",
