@@ -2,7 +2,7 @@
 
 import sys
 
-__version__ = "0.88"
+__version__ = "0.89"
 
 
 if sys.version_info < (3, 11):

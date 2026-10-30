@@ -58,10 +58,11 @@ TEXTE: dict[str, dict[str, str]] = {
         "anhang_taste": "Taste a",
         "hilfe_menue": ("j/k · Enter Öffnen · / Filtern · s Suchen · m Postfach · "
                         "M Alles gelesen · w Forum wechseln · q Ende"),
-        "hilfe_liste": ("j/k · Enter Öffnen · n/p Seite · N Neues Thema · / Filtern · "
-                        "M Gelesen · R Neu laden · q Zurück"),
-        "hilfe_thread": ("j/k · Leer/b · n/p Seite · J/K Beitrag · r Antworten · "
-                         "z Zitieren · e Bearbeiten · a Anhänge · o Browser · q Zurück"),
+        "hilfe_liste": ("j/k · Enter Öffnen · u Ungelesene lesen · n/p Seite · N Neues Thema · "
+                        "/ Filtern · M Gelesen · R Neu laden · q Zurück"),
+        "hilfe_thread": ("j/k · u Nächstes ungelesenes · r Antworten · z Zitieren · n/p Seite · "
+                         "J/K Beitrag · Leer/b · e Bearbeiten · a Anhänge · o Browser · q Zurück"),
+        "keine_ungelesenen_mehr": "Keine weiteren ungelesenen Themen in dieser Liste.",
         "ucp_abos": "Abonnierte Themen",
         "ucp_lesezeichen": "Lesezeichen",
         "neu_markiert": "● neu",
@@ -85,6 +86,12 @@ TEXTE: dict[str, dict[str, str]] = {
         # Meldungen
         "netz_fehler": "Forum nicht erreichbar: {fehler}",
         "verworfen": "verworfen",
+        "verwerfen_frage": "Text wirklich verwerfen?",
+        "entwurf_zurueck": ("Wiederhergestellter Entwurf: Diesen Text hattest du hier schon "
+                            "geschrieben, aber nicht erfolgreich abgeschickt."),
+        "entwurf_bleibt": ("Der Text ist als Entwurf gesichert und beim nächsten Schreiben "
+                           "an dieser Stelle wieder da."),
+        "entwurf_nicht_gesichert": "Entwurf konnte nicht gesichert werden: {fehler}",
         "angehaengt": "angehängt",
         "fehler_anhaengen": "Anhängen fehlgeschlagen: {fehler}",
         "fehler_entfernen": "Entfernen fehlgeschlagen: {fehler}",
@@ -191,10 +198,11 @@ TEXTE: dict[str, dict[str, str]] = {
         "anhang_taste": "key a",
         "hilfe_menue": ("j/k · Enter open · / filter · s search · m messages · "
                         "M mark all read · w switch board · q quit"),
-        "hilfe_liste": ("j/k · Enter open · n/p page · N new topic · / filter · "
-                        "M mark read · R reload · q back"),
-        "hilfe_thread": ("j/k · Space/b · n/p page · J/K post · r reply · z quote · "
-                         "e edit · a attachments · o browser · q back"),
+        "hilfe_liste": ("j/k · Enter open · u read unread · n/p page · N new topic · "
+                        "/ filter · M mark read · R reload · q back"),
+        "hilfe_thread": ("j/k · u next unread · r reply · z quote · n/p page · J/K post · "
+                         "Space/b · e edit · a attachments · o browser · q back"),
+        "keine_ungelesenen_mehr": "No more unread topics in this list.",
         "ucp_abos": "Subscribed topics",
         "ucp_lesezeichen": "Bookmarks",
         "neu_markiert": "● new",
@@ -214,6 +222,12 @@ TEXTE: dict[str, dict[str, str]] = {
         "laedt_datei": "downloading {name} …",
         "netz_fehler": "Board unreachable: {fehler}",
         "verworfen": "discarded",
+        "verwerfen_frage": "Really discard the text?",
+        "entwurf_zurueck": ("Restored draft: you wrote this here before, but it was not "
+                            "sent successfully."),
+        "entwurf_bleibt": ("The text is saved as a draft and comes back the next time you "
+                           "write here."),
+        "entwurf_nicht_gesichert": "Could not save the draft: {fehler}",
         "angehaengt": "attached",
         "fehler_anhaengen": "attaching failed: {fehler}",
         "fehler_entfernen": "removing failed: {fehler}",

@@ -96,6 +96,7 @@ Vim keys throughout:
 | `n` `p` | next / previous page of results |
 | `/` | filter the list |
 | `M` | mark all forums read (menu) / this forum read (topic list) |
+| `u` | next unread topic, straight from one to the next |
 | `s` | search the board |
 | `w` | switch board |
 | `m` | private messages |
@@ -117,6 +118,10 @@ searches (unread, new since last visit, your posts, active, unanswered) and,
 when logged in, your **subscribed topics** and **bookmarks**. Filtering the
 forum tree with `/` shows where each hit lives (`Users › Duria 2`), so two
 forums with the same name stay apart. `M` marks everything read after asking.
+
+`u` reads through a list like a news reader: from the list or from inside a
+topic it opens the next unread topic at its first new post, page after page,
+without going back to the list in between. `q` returns to the list.
 
 `n`/`p` follow the board's own page links, so boards with 10, 25 or 50 entries
 per page all page correctly, including styles that never print "Page x of y".
@@ -194,6 +199,12 @@ see exactly what will appear — and only `a` sends it.
 | `[text](url)` | `[url=…]…[/url]` |
 | fenced block | `[code]…[/code]` |
 | `# heading` | bold — BBCode has no headings |
+
+**Nothing you write gets lost.** The text is saved as a draft every time the
+editor closes (`~/.local/state/phpbb-tui/entwuerfe/`, mode 600) and removed
+only when the board confirms the post or you discard it on purpose; `q` in
+the preview asks first. After a crash, a rejection or an unclear result,
+replying at the same place brings the text back, marked as a restored draft.
 
 Quoting round-trips losslessly: `[quote="someone"]` becomes
 `> **someone:**` for editing and turns back into `[quote="someone"]` on send.
@@ -344,6 +355,7 @@ Vim-Tasten überall:
 | `n` `p` | nächste / vorige Seite des Forums |
 | `/` | Liste filtern |
 | `M` | alles als gelesen markieren (Menü) bzw. dieses Forum (Themenliste) |
+| `u` | nächstes ungelesenes Thema, direkt eins nach dem anderen |
 | `s` | im Board suchen |
 | `w` | Board wechseln |
 | `m` | private Nachrichten |
@@ -368,6 +380,10 @@ filtert, sieht bei jedem Treffer, wo er hängt (`Benutzerforen › Duria 2`) —
 zwei gleichnamige Foren bleiben so unterscheidbar. `M` markiert nach
 Rückfrage alles als gelesen.
 
+`u` liest eine Liste durch wie ein Newsreader: aus der Liste oder mitten aus
+einem Thema öffnet es das nächste ungelesene Thema beim ersten neuen Beitrag,
+Seite für Seite, ohne Umweg über die Liste. `q` führt zurück zur Liste.
+
 `n`/`p` folgen den Seitenlinks des Boards selbst. Darum blättert der Client
 richtig, ob ein Board 10, 25 oder 50 Einträge pro Seite zeigt, und auch bei
 Styles, die nirgends „Seite x von y“ hinschreiben.
@@ -378,6 +394,13 @@ Styles, die nirgends „Seite x von y“ hinschreiben.
 Zeile mit `#` ist der Betreff. Nach dem Speichern zeigt das Forum selbst die
 Vorschau, erst `a` sendet ab. Zitate laufen verlustfrei in beide Richtungen:
 aus `[quote="jemand"]` wird `> **jemand:**` und beim Senden wieder dasselbe.
+
+**Kein geschriebener Text geht verloren.** Jedes Mal, wenn der Editor zugeht,
+wird der Text als Entwurf gesichert (`~/.local/state/phpbb-tui/entwuerfe/`,
+Rechte 600). Gelöscht wird er erst, wenn das Forum den Beitrag bestätigt oder
+du ihn ausdrücklich verwirfst; `q` in der Vorschau fragt vorher nach. Nach
+einem Absturz, einer Ablehnung oder einem unklaren Ergebnis ist der Text beim
+nächsten Antworten an derselben Stelle wieder da, als Entwurf gekennzeichnet.
 
 Kommt nach dem Absenden keine eindeutige Antwort (Verbindung weg, unbekannte
 Seite), warnt der Client: Der Beitrag ist **vielleicht schon gespeichert**,

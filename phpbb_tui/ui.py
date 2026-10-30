@@ -19,7 +19,7 @@ from .board import (PM_ORDNER, SUCHEN, UCP_LISTEN, Anhang, Board, BoardError, En
 from .config import Config
 from .i18n import t
 from .markup import bbcode_to_md, md_to_bbcode
-from . import tui_submission
+from . import entwuerfe, tui_submission
 from .tui_pagination import navigation
 
 
@@ -315,6 +315,11 @@ class Oberflaeche:
         unterforen: list[Forum] = []
         kopf, seite, seiten = "", 1, 1
         laden = True
+        # „u“: der Reihe nach durch die ungelesenen Themen. `besucht` hält
+        # fest, was schon offen war, falls das Board es nicht als gelesen
+        # führt; `frisch` heißt, die Seite wurde dafür schon neu geladen.
+        weiter_ungelesen, frisch, leere_seiten = False, False, 0
+        besucht: set[int] = set()
 
         while True:
             if laden:
@@ -357,12 +362,39 @@ class Oberflaeche:
                     max(0, self.breite - len(rechte) - 2)) + rechte)
                 eintraege.append(("thema", thema))
 
-            taste, pos = self.liste(
-                f"{kopf}{f'  ⟨{filter_text}⟩' if filter_text else ''}",
-                zeilen, t("hilfe_liste"), tasten="/npNRM", start=pos)
+            if weiter_ungelesen:
+                ziel = next((i for i, (art, x) in enumerate(eintraege)
+                             if art == "thema" and x.unread           # type: ignore[union-attr]
+                             and x.tid not in besucht), None)         # type: ignore[union-attr]
+                if ziel is not None:
+                    pos, leere_seiten = ziel, 0
+                    taste = "\n"
+                elif not frisch:
+                    # Suchlisten wie „Ungelesene Beiträge“ rücken nach, wenn
+                    # Gelesenes herausfällt: erst dieselbe Seite neu laden.
+                    frisch, laden = True, True
+                    continue
+                elif "n" in nav and leere_seiten < 3:
+                    # Höchstens drei Seiten ohne Treffer weitersuchen; ein
+                    # großes, gelesenes Forum soll nicht ganz durchlaufen.
+                    start, laden, frisch = nav["n"], True, False
+                    leere_seiten += 1
+                    continue
+                else:
+                    weiter_ungelesen = False
+                    self.meldung = t("keine_ungelesenen_mehr")
+                    laden = True
+                    continue
+            else:
+                taste, pos = self.liste(
+                    f"{kopf}{f'  ⟨{filter_text}⟩' if filter_text else ''}",
+                    zeilen, t("hilfe_liste"), tasten="/npNRMu", start=pos)
 
             if taste == "q":
                 return
+            if taste == "u":
+                weiter_ungelesen, frisch = True, False
+                continue
             if taste in ("n", "p"):
                 if taste in nav:
                     start = nav[taste]
@@ -387,13 +419,17 @@ class Oberflaeche:
                     self.themenliste(fid=wert.fid)      # type: ignore[union-attr]
                 elif art == "thema":
                     # Ungelesene Themen öffnen beim ersten neuen Beitrag.
-                    self.thread_zeigen(wert.tid,         # type: ignore[union-attr]
-                                       ungelesen=wert.unread)  # type: ignore[union-attr]
-                    laden = True
+                    weiter = self.thread_zeigen(
+                        wert.tid, ungelesen=wert.unread)  # type: ignore[union-attr]
+                    besucht.add(wert.tid)                 # type: ignore[union-attr]
+                    wert.unread = False                   # type: ignore[union-attr]
+                    weiter_ungelesen, frisch = bool(weiter), False
+                    laden = not weiter_ungelesen
 
     # -- Ebene 3: Beiträge -------------------------------------------------
 
-    def thread_zeigen(self, tid: int, ungelesen: bool = False) -> None:
+    def thread_zeigen(self, tid: int, ungelesen: bool = False) -> bool:
+        """Ein Thema lesen. True heißt: weiter zum nächsten ungelesenen („u“)."""
         start, pos = 0, 0
         th: Thread | None = None
         nav: dict[str, int] = {}
@@ -408,11 +444,11 @@ class Oberflaeche:
                           else self.b.thread(tid, start))
                 except LoginRequired:
                     if not self.anmelden():
-                        return
+                        return False
                     continue
                 except BoardError as e:
                     self.meldung = str(e)
-                    return
+                    return False
                 nav = navigation(self.b, th.page, th.pages)
                 zeilen = self._thread_zeilen(th)
                 laden = False
@@ -437,7 +473,9 @@ class Oberflaeche:
             k = self.scr.getch()
 
             if k in (ord("q"), 27, ord("h"), curses.KEY_LEFT):
-                return
+                return False
+            elif k == ord("u"):
+                return True
             elif k in (ord("j"), curses.KEY_DOWN):
                 pos = min(pos + 1, max(0, len(zeilen) - 1))
             elif k in (ord("k"), curses.KEY_UP):
@@ -629,12 +667,25 @@ class Oberflaeche:
         """
         betreff = e.felder.get("subject", "")
         vorlage = bbcode_to_md(e.felder.get("message", ""))
+        ziel = (self.b.name, e.ziel, e.params)
+        hinweis = ""
+        gesichert = entwuerfe.laden(*ziel)
+        if gesichert:
+            # Ein früher hier angefangener Text geht vor die Vorlage des Forums.
+            betreff = gesichert[0] or betreff
+            vorlage, hinweis = gesichert[1], t("entwurf_zurueck")
 
         while True:
-            betreff, text = self._editor(betreff, vorlage)
+            betreff, text = self._editor(betreff, vorlage, hinweis)
+            hinweis = ""
             if not text.strip():
+                entwuerfe.loeschen(*ziel)
                 self.meldung = t("verworfen")
                 return False
+            try:
+                entwuerfe.sichern(*ziel, betreff, text)
+            except OSError as fehler:
+                self.meldung = t("entwurf_nicht_gesichert", fehler=fehler)
             bb = md_to_bbcode(text)
 
             while True:      # Vorschau-Schleife (Anhänge ändern nichts am Text)
@@ -664,6 +715,10 @@ class Oberflaeche:
                 if wahl == "d":
                     self._anhaengen(e)
                     continue
+                if wahl not in ("a", "b", "d", "x"):
+                    # Ein versehentliches q kostete früher den ganzen Text.
+                    if not self.bestaetigen(t("verwerfen_frage")):
+                        continue
                 if wahl == "x":
                     if dateien:
                         self.warten(t("entfernt"))
@@ -681,19 +736,25 @@ class Oberflaeche:
                 self.meldung = (erfolg if outcome == "success" and erfolg
                                 else meldung)
                 if outcome == "success":
+                    entwuerfe.loeschen(*ziel)
                     return True
                 if outcome == "uncertain":
+                    # Der Entwurf bleibt: war der Beitrag nicht angekommen,
+                    # ist der Text beim nächsten Antworten hier wieder da.
                     self.seite_zeigen(t("senden_unklar_titel"),
                                       textwrap.wrap(
-                                          meldung, max(20, self.breite - 4)),
+                                          meldung + " " + t("entwurf_bleibt"),
+                                          max(20, self.breite - 4)),
                                       t("hilfe_zurueck"))
                     return False
                 if not self.bestaetigen(t("nochmal_bearbeiten", meldung=meldung)):
+                    self.meldung = t("entwurf_bleibt")
                     return False
                 vorlage = text
             elif wahl == "b":
                 vorlage = text
             else:
+                entwuerfe.loeschen(*ziel)
                 self.meldung = t("verworfen")
                 return False
 
@@ -708,7 +769,7 @@ class Oberflaeche:
         except Exception as fehler:
             self.meldung = t("fehler_anhaengen", fehler=fehler)
 
-    def _editor(self, betreff: str, vorlage: str) -> tuple[str, str]:
+    def _editor(self, betreff: str, vorlage: str, hinweis: str = "") -> tuple[str, str]:
         kopfzeilen = [
             f"# {betreff}" if betreff else "# ",
             "",
@@ -716,6 +777,8 @@ class Oberflaeche:
             t("editor_hinweis_2"),
             "",
         ]
+        if hinweis:
+            kopfzeilen[4:4] = [f"<!-- {hinweis} -->", ""]
         inhalt = "\n".join(kopfzeilen) + vorlage + "\n\n"
 
         with tempfile.NamedTemporaryFile("w+", suffix=".md", prefix="phpbb-",

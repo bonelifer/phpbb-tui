@@ -19,6 +19,10 @@ class SubmissionTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
+        # Drafts must never land in the real state directory.
+        drafts = patch("phpbb_tui.entwuerfe.ORDNER", Path(self.temp.name) / "drafts")
+        drafts.start()
+        self.addCleanup(drafts.stop)
         self.session = Mock(headers={})
         with patch("phpbb_tui.board.requests.Session",
                    return_value=self.session):

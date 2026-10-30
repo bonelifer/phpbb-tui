@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from phpbb_tui.board import Board, BoardError
+from phpbb_tui.i18n import t
 
 
 UNREAD_THREAD = """
@@ -178,6 +179,61 @@ class UnreadTuiTests(unittest.TestCase):
         # First load jumps to the unread page, reload keeps that page normally.
         self.assertEqual(calls, [(0, True), (15, False)])
         self.assertEqual(seen, ["new", "old"])
+
+
+class NextUnreadTests(unittest.TestCase):
+    """`u` walks through unread topics without returning to the list."""
+
+    def run_list(self, pages, thread_answers, keys):
+        from types import SimpleNamespace
+        from phpbb_tui.board import Topic
+        from phpbb_tui.ui import Oberflaeche
+
+        b = SimpleNamespace(base="https://example.invalid", page_path="search.php",
+                            page_params={}, page_html="", username="me")
+        loads = []
+
+        def search(sid, start):
+            loads.append(start)
+            topics = [Topic(tid, f"T{tid}", unread=unread)
+                      for tid, unread in pages(start, len(loads))]
+            return topics, [], "Unread", 1, 1
+
+        b.search = search
+        screen = Mock()
+        screen.getmaxyx.return_value = (24, 100)
+        ui = Oberflaeche(screen, b, Mock())
+        ui.warten = Mock()
+        ui.liste = Mock(side_effect=[(k, 0) for k in keys])
+        opened = []
+
+        def thread(tid, ungelesen=False):
+            opened.append((tid, ungelesen))
+            return next(thread_answers)
+
+        ui.thread_zeigen = thread
+        with patch("phpbb_tui.ui.navigation", return_value={}):
+            ui.themenliste(such_id="unreadposts")
+        return opened, loads, ui
+
+    def test_u_chains_unread_topics_then_reports_the_end(self):
+        page = lambda start, n: [(1, True), (2, False), (3, True)]
+        opened, loads, ui = self.run_list(page, iter([True, True]), ["u", "q"])
+        self.assertEqual(opened, [(1, True), (3, True)])
+        # Once through, a fresh load finds only visited topics: stop there.
+        self.assertEqual(ui.meldung, t("keine_ungelesenen_mehr"))
+
+    def test_leaving_a_topic_with_q_returns_to_the_reloaded_list(self):
+        page = lambda start, n: [(1, True), (3, True)]
+        opened, loads, _ = self.run_list(page, iter([False]), ["u", "q"])
+        self.assertEqual(opened, [(1, True)])
+        self.assertEqual(len(loads), 2)
+
+    def test_search_lists_are_reloaded_before_giving_up(self):
+        # Unread searches shrink as topics are read; new ones move up.
+        page = lambda start, n: [(1, True)] if n == 1 else [(1, True), (5, True)]
+        opened, _, _ = self.run_list(page, iter([True, False]), ["u", "q"])
+        self.assertEqual(opened, [(1, True), (5, True)])
 
 
 if __name__ == "__main__":
