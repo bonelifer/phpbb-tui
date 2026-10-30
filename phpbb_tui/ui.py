@@ -14,7 +14,7 @@ import tempfile
 import textwrap
 from pathlib import Path
 
-from .board import (PM_ORDNER, SUCHEN, Anhang, Board, BoardError, Entwurf,
+from .board import (PM_ORDNER, SUCHEN, UCP_LISTEN, Anhang, Board, BoardError, Entwurf,
                     Forum, LoginRequired, Nachricht, PM, Thread, Topic)
 from .config import Config
 from .i18n import t
@@ -205,6 +205,7 @@ class Oberflaeche:
         laden = True
         pos = 0
         filter_text = ""
+        springe_zu_treffer = False
         while True:
             if laden:
                 self.warten()
@@ -229,20 +230,36 @@ class Oberflaeche:
                                  if self.b.pm_neu else ""))
             eintraege += [("suche", sid) for sid, _ in SUCHEN]
             zeilen += [f"  ★ {t(schl)}" for _, schl in SUCHEN]
+            if self.b.username:
+                eintraege += [("ucp", modus) for modus, _ in UCP_LISTEN]
+                zeilen += [f"  ☆ {t(schl)}" for _, schl in UCP_LISTEN]
             eintraege.append(("trenner", None))
             zeilen.append("  " + "─" * 40)
+            eltern: list[str] = []          # Pfad der übergeordneten Foren
             for f in foren:
+                del eltern[f.ebene:]
+                pfad = " › ".join(eltern)
+                eltern.append(f.name)
                 if filter_text and filter_text.lower() not in f.name.lower():
                     continue
-                einzug = "  " + "   " * f.ebene
-                zusatz = f"   {f.beschreibung}" if f.beschreibung else ""
-                zeilen.append(f"{einzug}▸ {f.name}{zusatz}")
+                if filter_text:
+                    # Ohne Baum drumherum sagt erst der Pfad, welches
+                    # „Fehlermeldungen“ gemeint ist.
+                    zeilen.append(f"  ▸ {f.name}" + (f"   ({pfad})" if pfad else ""))
+                else:
+                    einzug = "  " + "   " * f.ebene
+                    zusatz = f"   {f.beschreibung}" if f.beschreibung else ""
+                    zeilen.append(f"{einzug}▸ {f.name}{zusatz}")
                 eintraege.append(("forum", f))
+            if springe_zu_treffer:
+                pos = next((i for i, (art, _) in enumerate(eintraege)
+                            if art == "forum"), pos)
+                springe_zu_treffer = False
 
             taste, pos = self.liste(
                 f"{self.b.name} · {self.b.username or t('gast')}"
                 + (f"  ⟨{filter_text}⟩" if filter_text else ""),
-                zeilen, t("hilfe_menue"), tasten="/swRm", start=pos)
+                zeilen, t("hilfe_menue"), tasten="/swRmM", start=pos)
 
             if taste == "q":
                 return
@@ -253,9 +270,12 @@ class Oberflaeche:
                 laden = True            # frischt nebenbei den Zähler auf
             elif taste == "R":
                 laden = True
+            elif taste == "M" and self.b.username:
+                if self._als_gelesen(None, t("gelesen_alle_frage")):
+                    laden = True
             elif taste == "/":
                 filter_text = self.frage(t("frage_foren_filter"))
-                pos = 0
+                pos, springe_zu_treffer = 0, bool(filter_text)
             elif taste == "s":
                 worte = self.frage(t("frage_suche"))
                 if worte:
@@ -267,13 +287,28 @@ class Oberflaeche:
                     laden = True
                 elif art == "suche":
                     self.themenliste(such_id=str(wert))
+                elif art == "ucp":
+                    self.themenliste(ucp=str(wert))
                 elif art == "forum":
                     self.themenliste(fid=wert.fid)      # type: ignore[union-attr]
 
     # -- Ebene 2: Themen ---------------------------------------------------
 
+    def _als_gelesen(self, fid: int | None, frage: str) -> bool:
+        """Nach Rückfrage das Board bzw. ein Forum als gelesen markieren."""
+        if not self.bestaetigen(frage):
+            return False
+        self.warten()
+        try:
+            self.b.als_gelesen_markieren(fid)
+        except BoardError as fehler:
+            self.meldung = str(fehler)
+            return False
+        self.meldung = t("gelesen_erledigt")
+        return True
+
     def themenliste(self, fid: int | None = None, such_id: str | None = None,
-                    worte: str = "") -> None:
+                    worte: str = "", ucp: str = "") -> None:
         start, pos, filter_text = 0, 0, ""
         nav: dict[str, int] = {}
         themen: list[Topic] = []
@@ -289,6 +324,8 @@ class Oberflaeche:
                         themen, unterforen, kopf, seite, seiten = self.b.topics(fid, start)
                     elif worte:
                         themen, unterforen, kopf, seite, seiten = self.b.suche(worte, start)
+                    elif ucp:
+                        themen, unterforen, kopf, seite, seiten = self.b.ucp_themen(ucp, start)
                     else:
                         themen, unterforen, kopf, seite, seiten = self.b.search(str(such_id), start)
                 except LoginRequired:
@@ -322,7 +359,7 @@ class Oberflaeche:
 
             taste, pos = self.liste(
                 f"{kopf}{f'  ⟨{filter_text}⟩' if filter_text else ''}",
-                zeilen, t("hilfe_liste"), tasten="/npNR", start=pos)
+                zeilen, t("hilfe_liste"), tasten="/npNRM", start=pos)
 
             if taste == "q":
                 return
@@ -341,17 +378,22 @@ class Oberflaeche:
             elif taste == "N" and fid is not None:
                 if self.schreiben(mode="post", fid=fid):
                     laden = True
+            elif taste == "M" and fid is not None and self.b.username:
+                if self._als_gelesen(fid, t("gelesen_forum_frage")):
+                    laden = True
             elif taste == "\n" and pos < len(eintraege):
                 art, wert = eintraege[pos]
                 if art == "forum":
                     self.themenliste(fid=wert.fid)      # type: ignore[union-attr]
                 elif art == "thema":
-                    self.thread_zeigen(wert.tid)        # type: ignore[union-attr]
+                    # Ungelesene Themen öffnen beim ersten neuen Beitrag.
+                    self.thread_zeigen(wert.tid,         # type: ignore[union-attr]
+                                       ungelesen=wert.unread)  # type: ignore[union-attr]
                     laden = True
 
     # -- Ebene 3: Beiträge -------------------------------------------------
 
-    def thread_zeigen(self, tid: int) -> None:
+    def thread_zeigen(self, tid: int, ungelesen: bool = False) -> None:
         start, pos = 0, 0
         th: Thread | None = None
         nav: dict[str, int] = {}
@@ -362,7 +404,8 @@ class Oberflaeche:
             if laden:
                 self.warten()
                 try:
-                    th = self.b.thread(tid, start)
+                    th = (self.b.thread(tid, start, ungelesen=True) if ungelesen
+                          else self.b.thread(tid, start))
                 except LoginRequired:
                     if not self.anmelden():
                         return
@@ -374,6 +417,12 @@ class Oberflaeche:
                 zeilen = self._thread_zeilen(th)
                 laden = False
                 pos = 0
+                if ungelesen:
+                    # Nur beim Öffnen; Blättern und Neuladen bleiben normal.
+                    start, ungelesen = th.start, False
+                    if th.erster_neuer is not None:
+                        pos = next((i for i, (_, _, n) in enumerate(zeilen)
+                                    if n == th.erster_neuer), 0)
 
             assert th is not None
             sicht = self.hoehe - 2
@@ -445,6 +494,8 @@ class Oberflaeche:
             kopf = f"┌─ {p.author} · {p.date}"
             if p.own:
                 kopf += "  " + t("eigener_beitrag")
+            if p.unread:
+                kopf += "  " + t("neu_markiert")
             zeilen.append((kopf.ljust(breite)[:breite],
                            curses.color_pair(C_AUTOR) | curses.A_BOLD, n))
             for absatz in p.body.split("\n"):
@@ -500,6 +551,10 @@ class Oberflaeche:
                         if not antwort:
                             continue
                         path = Path(antwort).expanduser()
+                        if not path.is_absolute():
+                            # Ein bloßer Name gehört in den Download-Ordner,
+                            # nicht dorthin, wo das Programm gestartet wurde.
+                            path = Path(self.cfg.downloads).expanduser() / path
                         if path.is_symlink():
                             raise BoardError(t("download_unsicher"))
                         if antwort.endswith(os.sep) or path.is_dir():

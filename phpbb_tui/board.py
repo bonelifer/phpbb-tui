@@ -23,9 +23,12 @@ from urllib.parse import parse_qs, urljoin, urlsplit
 
 import requests
 
+from . import netz
 from .i18n import t
 
-USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) phpbb-tui/1.0"
+from . import __version__
+
+USER_AGENT = f"Mozilla/5.0 (X11; Linux x86_64) phpbb-tui/{__version__}"
 
 # Übersichten, die jedes phpBB über search.php anbietet.
 # Zweiter Eintrag ist der Sprachschlüssel, siehe i18n.py
@@ -35,6 +38,12 @@ SUCHEN = [
     ("egosearch", "such_eigene"),
     ("active_topics", "such_aktiv"),
     ("unanswered", "such_unbeantwortet"),
+]
+
+# Listen aus dem persönlichen Bereich (ucp.php?i=ucp_main&mode=…).
+UCP_LISTEN = [
+    ("subscribed", "ucp_abos"),
+    ("bookmarks", "ucp_lesezeichen"),
 ]
 
 # Die drei Postfächer, die phpBB immer anlegt. „outbox" sind Nachrichten, die
@@ -95,6 +104,7 @@ class Post:
     body: str
     own: bool = False
     anhaenge: list[Anhang] = field(default_factory=list)
+    unread: bool = False
 
 
 @dataclass
@@ -106,6 +116,7 @@ class Thread:
     page: int = 1
     pages: int = 1
     start: int = 0
+    erster_neuer: int | None = None   # Index des ersten ungelesenen Beitrags
 
 
 @dataclass
@@ -215,6 +226,7 @@ class Board:
                 self.jar.load(ignore_discard=True, ignore_expires=True)
             except Exception:
                 pass
+        netz.einrichten()
         self.s = requests.Session()
         self.s.cookies = self.jar            # type: ignore[assignment]
         self.s.headers["User-Agent"] = USER_AGENT
@@ -421,6 +433,49 @@ class Board:
         themen, titel, seite, seiten = self._parse_topics(page)
         return themen, self._parse_unterforen(page), titel, seite, seiten
 
+    def ucp_themen(self, modus: str, start: int = 0) -> tuple[list[Topic], list[Forum], str, int, int]:
+        """Abonnierte Themen oder Lesezeichen aus dem persönlichen Bereich.
+
+        Die Zeilen sind wie in jeder Themenliste gebaut; abonnierte Foren
+        stehen als `forumtitle`-Zeilen davor und kommen als Unterforen zurück.
+        """
+        page = self.get("ucp.php", i="ucp_main", mode=modus, start=start)
+        self.require_login(page)
+        themen, _, seite, seiten = self._parse_topics(page)
+        schluessel = dict(UCP_LISTEN).get(modus, modus)
+        return themen, self._parse_unterforen(page), t(schluessel), seite, seiten
+
+    @staticmethod
+    def _gelesen_link(page: str, art: str) -> str:
+        """Den Link „Foren/Themen als gelesen markieren“ der Seite.
+
+        Nur Links mit `hash=` zählen: Den Schlüssel legt phpBB pro Sitzung
+        fest, ohne ihn käme statt der Markierung eine Rückfrage.
+        """
+        for href in re.findall(r'href="([^"]*)"', page):
+            href = unescape(href)
+            if f"mark={art}" in href and "hash=" in href:
+                return href[2:] if href.startswith("./") else href
+        return ""
+
+    def als_gelesen_markieren(self, fid: int | None = None) -> None:
+        """Alle Foren (ohne `fid`) oder alle Themen eines Forums als gelesen markieren.
+
+        Der Link wird jedes Mal frisch geholt, weil `hash` und `mark_time`
+        zur Seite gehören, von der aus markiert wird.
+        """
+        if fid is None:
+            seite, art = self.get("index.php"), "forums"
+        else:
+            seite, art = self.get("viewforum.php", f=fid), "topics"
+        self.require_login(seite)
+        link = self._gelesen_link(seite, art)
+        if not link:
+            raise BoardError(t("gelesen_nicht_moeglich"))
+        pfad, _, abfrage = link.partition("?")
+        params = {k: v[0] for k, v in parse_qs(abfrage).items()}
+        self.require_login(self.get(pfad, **params))
+
     def search(self, search_id: str, start: int = 0) -> tuple[list[Topic], list[Forum], str, int, int]:
         page = self.get("search.php", search_id=search_id, start=start)
         self.require_login(page)
@@ -480,15 +535,39 @@ class Board:
         if m:
             return int(m.group(1)), int(m.group(2))
         m = re.search(r"(?:Seite|Page) (\d+) (?:von|of) (\d+)", strip_tags(page))
-        return (int(m.group(1)), int(m.group(2))) if m else (1, 1)
+        if m:
+            return int(m.group(1)), int(m.group(2))
+        # Manche Styles (z. B. damaïo) schreiben kein „Seite x von y“, nur die
+        # Seitenleiste. Die der ganzen Seite hat einen aktiven Eintrag; die
+        # Mini-Leisten in Themenzeilen haben keinen und zählen nicht.
+        for leiste in re.findall(r'<div class="pagination">(.*?)</ul>', page, re.S):
+            aktiv = re.search(r'<li class="active"><span>(\d+)</span>', leiste)
+            if aktiv:
+                zahlen = [int(z) for z in re.findall(r'>\s*(\d+)\s*</(?:a|span)>', leiste)]
+                return int(aktiv.group(1)), max(zahlen + [int(aktiv.group(1))])
+        return 1, 1
 
     # -- Thread ------------------------------------------------------------
 
-    def thread(self, tid: int, start: int = 0) -> Thread:
+    def thread(self, tid: int, start: int = 0, ungelesen: bool = False) -> Thread:
+        """Eine Seite eines Themas; mit `ungelesen` die mit dem ersten neuen Beitrag.
+
+        phpBB springt bei `view=unread` selbst auf die richtige Seite und setzt
+        davor einen Anker `id="unread"`. Welche Seite das ist, verrät nur der
+        Canonical-Link; den braucht das Blättern als Ausgangspunkt.
+        """
         from .markup import html_to_text
 
-        page = self.get("viewtopic.php", t=tid, start=start)
+        if ungelesen:
+            page = self.get("viewtopic.php", t=tid, view="unread")
+            canon = re.search(r'<link rel="canonical" href="[^"]*?[?&](?:amp;)?start=(\d+)', page)
+            start = int(canon.group(1)) if canon else 0
+            self.page_params = {"t": tid, "start": start}
+        else:
+            page = self.get("viewtopic.php", t=tid, start=start)
         self.require_login(page)
+        anker = re.search(r'id="unread"[^>]*>\s*(?:</a>)?\s*<div id="p(\d+)"', page)
+        erster_neuer_pid = int(anker.group(1)) if anker else 0
         title = strip_tags((re.search(r'<h2 class="topic-title"[^>]*>(.*?)</h2>', page, re.S)
                             or re.search(r"<title>(.*?)</title>", page, re.S)
                             or [None, ""])[1])
@@ -506,9 +585,9 @@ class Board:
             if forums:
                 fid = int(forums[-1])
         th = Thread(tid=tid, title=title, forum_id=fid, start=start)
-        for m in re.finditer(r'<div id="p(\d+)" class="post[^"]*">(.*?)(?=<div id="p\d+" '
+        for m in re.finditer(r'<div id="p(\d+)" class="(post[^"]*)">(.*?)(?=<div id="p\d+" '
                              r'class="post|<div class="action-bar bar-bottom|$)', page, re.S):
-            pid, blk = int(m.group(1)), m.group(2)
+            pid, klassen, blk = int(m.group(1)), m.group(2).split(), m.group(3)
             author = _USER.search(blk)
             date = re.search(r"<time[^>]*>([^<]+)</time>", blk)
             subj = re.search(r'<h3[^>]*>(?:<a[^>]*>)?(.*?)(?:</a>)?</h3>', blk, re.S)
@@ -522,7 +601,11 @@ class Board:
                 body=html_to_text(content.group(1)) if content else "",
                 own=bool(author and unescape(author.group(1)) == self.username),
                 anhaenge=self._parse_anhaenge(blk),
+                unread="unreadpost" in klassen or pid == erster_neuer_pid,
             ))
+            if th.erster_neuer is None and (pid == erster_neuer_pid or (
+                    ungelesen and "unreadpost" in klassen)):
+                th.erster_neuer = len(th.posts) - 1
         th.page, th.pages = self._pagination(page)
         return th
 

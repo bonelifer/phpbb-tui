@@ -5,7 +5,7 @@ and opens the completed file. Lowercase `s` saves there without opening it.
 Uppercase `S` asks for a destination file or directory. Leave the answer blank
 to cancel. Existing directories are recognized automatically; use a trailing
 `/` when choosing a directory that does not yet exist. `~` expands to the home
-directory. A relative path is relative to the client's working directory.
+directory. A relative path is placed inside the configured downloads directory.
 
 The default directory still comes from the existing configuration. Choosing a
 save-as destination affects only that download; it does not change settings.

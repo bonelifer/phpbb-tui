@@ -56,10 +56,19 @@ TEXTE: dict[str, dict[str, str]] = {
         "hilfe_vorschau_ohne_anhang": "a Absenden · b Bearbeiten · q Verwerfen",
         "an_zeile": "An: {liste}",
         "anhang_taste": "Taste a",
-        "hilfe_menue": "j/k Bewegen · Enter Öffnen · / Filtern · s Suchen · w Forum wechseln · q Ende",
-        "hilfe_liste": "j/k · Enter Öffnen · n/p Seite · N Neues Thema · / Filtern · R Neu laden · q Zurück",
-        "hilfe_thread": ("j/k · Leer/b Seite · J/K Beitrag · r Antworten · z Zitieren · "
-                         "e Bearbeiten · a Anhänge · o Browser · q Zurück"),
+        "hilfe_menue": ("j/k · Enter Öffnen · / Filtern · s Suchen · m Postfach · "
+                        "M Alles gelesen · w Forum wechseln · q Ende"),
+        "hilfe_liste": ("j/k · Enter Öffnen · n/p Seite · N Neues Thema · / Filtern · "
+                        "M Gelesen · R Neu laden · q Zurück"),
+        "hilfe_thread": ("j/k · Leer/b · n/p Seite · J/K Beitrag · r Antworten · "
+                         "z Zitieren · e Bearbeiten · a Anhänge · o Browser · q Zurück"),
+        "ucp_abos": "Abonnierte Themen",
+        "ucp_lesezeichen": "Lesezeichen",
+        "neu_markiert": "● neu",
+        "gelesen_alle_frage": "Alle Foren als gelesen markieren?",
+        "gelesen_forum_frage": "Alle Themen dieses Forums als gelesen markieren?",
+        "gelesen_erledigt": "Als gelesen markiert.",
+        "gelesen_nicht_moeglich": "Das Forum bietet hier kein „als gelesen markieren“ an.",
         "hilfe_vorschau": ("a Absenden · d Datei anhängen · x Anhang entfernen · "
                            "b Bearbeiten · q Verwerfen"),
         "hilfe_anhaenge": (
@@ -180,10 +189,19 @@ TEXTE: dict[str, dict[str, str]] = {
         "hilfe_vorschau_ohne_anhang": "a send · b edit · q discard",
         "an_zeile": "To: {liste}",
         "anhang_taste": "key a",
-        "hilfe_menue": "j/k move · Enter open · / filter · s search · w switch board · q quit",
-        "hilfe_liste": "j/k · Enter open · n/p page · N new topic · / filter · R reload · q back",
-        "hilfe_thread": ("j/k · Space/b page · J/K post · r reply · z quote · "
+        "hilfe_menue": ("j/k · Enter open · / filter · s search · m messages · "
+                        "M mark all read · w switch board · q quit"),
+        "hilfe_liste": ("j/k · Enter open · n/p page · N new topic · / filter · "
+                        "M mark read · R reload · q back"),
+        "hilfe_thread": ("j/k · Space/b · n/p page · J/K post · r reply · z quote · "
                          "e edit · a attachments · o browser · q back"),
+        "ucp_abos": "Subscribed topics",
+        "ucp_lesezeichen": "Bookmarks",
+        "neu_markiert": "● new",
+        "gelesen_alle_frage": "Mark all forums read?",
+        "gelesen_forum_frage": "Mark all topics in this forum read?",
+        "gelesen_erledigt": "Marked as read.",
+        "gelesen_nicht_moeglich": "The board offers no “mark read” here.",
         "hilfe_vorschau": "a send · d attach file · x remove attachment · b edit · q discard",
         "hilfe_anhaenge": "Enter open · s save · S save as · q back",
         "hilfe_zurueck": "q back",
