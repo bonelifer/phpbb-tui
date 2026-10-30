@@ -80,6 +80,7 @@ phpbb-tui login <name>    log in again
 phpbb-tui list            show configured boards
 phpbb-tui logout <name>   drop the session
 phpbb-tui <name> --guest  read without an account (boards that allow guests)
+phpbb-tui --version       show the version
 ```
 
 Vim keys throughout:
@@ -94,6 +95,7 @@ Vim keys throughout:
 | `Space` `b` | page down / up |
 | `n` `p` | next / previous page of results |
 | `/` | filter the list |
+| `M` | mark all forums read (menu) / this forum read (topic list) |
 | `s` | search the board |
 | `w` | switch board |
 | `m` | private messages |
@@ -106,6 +108,18 @@ Vim keys throughout:
 | `o` | open in the system browser |
 | `f` | next mailbox (inbox → sent → outbox) |
 | `d` | delete the message under the cursor |
+
+## Reading
+
+Unread topics (`●`) open **at the first new post**, on whichever page it is,
+and new posts carry a `● new` marker. The menu lists the board's built-in
+searches (unread, new since last visit, your posts, active, unanswered) and,
+when logged in, your **subscribed topics** and **bookmarks**. Filtering the
+forum tree with `/` shows where each hit lives (`Users › Duria 2`), so two
+forums with the same name stay apart. `M` marks everything read after asking.
+
+`n`/`p` follow the board's own page links, so boards with 10, 25 or 50 entries
+per page all page correctly, including styles that never print "Page x of y".
 
 For lost or unrecognized send confirmations, see
 [TUI submission outcomes](docs/tui-submissions.md) before retrying.
@@ -218,6 +232,14 @@ Override with `PHPBB_TUI_BROWSER`, the editor with `PHPBB_TUI_EDITOR`.
 The interface speaks English or German. It follows your locale; force it with
 `PHPBB_TUI_LANG=en` or `PHPBB_TUI_LANG=de`.
 
+## Slow start? IPv6
+
+Some boards publish an IPv6 address that never answers. Browsers barely
+notice, because they try both address families at once; Python's `requests`
+tries them one after another and waits for the full timeout first, which made
+every start against one board take 30 seconds. This client connects over IPv4
+first and falls back to IPv6 only when there is no IPv4 address or it fails.
+
 ## Two things phpBB does that will cost you an afternoon
 
 **A form submitted in the same second is rejected.** `check_form_key` computes
@@ -252,8 +274,13 @@ prosilver-derived style.
 
 ## Acknowledgments
 
-- The automation interface, tests, and documentation were assisted by
-  [Codex](https://www.anthropic.com/Codex).
+- **[William Jacoby (bonelifer)](https://github.com/bonelifer)** contributed
+  the non-interactive command line (reading, posting, private messages,
+  attachments), the regression test suite, a long list of fixes, and the TUI's
+  uncertain-submission warning, board-driven paging and save-as downloads.
+  His work was written with [Codex](https://openai.com/codex/).
+- The interactive client was written with
+  [Claude Code](https://claude.com/claude-code).
 
 ## License
 
@@ -279,51 +306,164 @@ Es gibt keinen gepflegten Terminal-Client für phpBB — der einzige auffindbare
 hat zwei Commits von 2017 und kann nur lesen. Der Grund: phpBB hat keine
 öffentliche Schnittstelle, und jedes Board liefert eigenes HTML.
 
-**Einrichten**
+## Einrichten
+
+Python 3.11 oder neuer und `requests`, sonst nichts.
 
 ```sh
+git clone https://github.com/drdewes/phpbb-tui ~/src/phpbb-tui
 ln -s ~/src/phpbb-tui/phpbb-tui.sh ~/.local/bin/phpbb-tui
 phpbb-tui add https://forum.example.org/forum
 ```
 
-Das Passwort wird nirgends gespeichert, nur das Sitzungs-Cookie. Boards mit
-Gastzugang lassen sich auch ohne Konto lesen: `phpbb-tui <name> --guest`.
+Das Passwort wird nirgends gespeichert, nur das Sitzungs-Cookie (Rechte 600).
+Boards mit Gastzugang lassen sich auch ohne Konto lesen: `phpbb-tui <name> --guest`.
 
-**Bedienung** — Vim-Tasten: `j`/`k` bewegen, `l`/Enter öffnen, `h`/`q` zurück,
-`^D`/`^U` halbe Seite, `g`/`G` Anfang/Ende, `n`/`p` Seite blättern, `/`
-filtern, `s` suchen, `w` Forum wechseln, `m` Postfach, `N` neues Thema bzw.
-neue Nachricht, `r` antworten, `z` zitieren, `e` eigenen Beitrag bearbeiten,
-`a` Anhänge, `J`/`K` Beitrag weiter/zurück, `f` Ordner wechseln, `d` löschen,
-`o` im Browser öffnen.
+```
+phpbb-tui                 starten (fragt bei mehreren Boards nach)
+phpbb-tui <name>          ein bestimmtes Board öffnen
+phpbb-tui add <adresse>   Board hinzufügen
+phpbb-tui login <name>    neu anmelden
+phpbb-tui list            eingerichtete Boards zeigen
+phpbb-tui logout <name>   Sitzung verwerfen
+phpbb-tui --version       Version zeigen
+```
 
-**Private Nachrichten** — `m` im Forenbaum (oder der `✉`-Eintrag ganz oben)
-öffnet den Posteingang; daneben steht die Zahl der ungelesenen, `●` markiert
-sie in der Liste. `f` schaltet durch die drei Postfächer, die jedes phpBB hat:
-Eingang, Gesendet und Postausgang — letzteres sind abgeschickte Nachrichten,
-die der Empfänger noch nicht gelesen hat.
+## Bedienung
 
-Lesen, Antworten und Zitieren gehen wie im Thread, denn phpBB liefert
-Nachrichten über dieselbe Mechanik; das Schreibformular heißt sogar wieder
-`postform`. Anders ist nur der Empfänger: einen Namen nimmt phpBB beim
-Absenden nicht entgegen, er muss vorher in einem eigenen Gang zu einer
-Benutzernummer aufgelöst werden und kommt als `address_list[u][nummer]`
-zurück. Deshalb fragt `N` die Empfänger einzeln ab und prüft jeden sofort
-gegen das Board — ein Tippfehler fällt so vor dem Schreiben auf und nicht
-danach. Enter auf leerer Zeile beendet die Liste. Beim Antworten entfällt die
-Frage, da bringt das Formular den Empfänger schon mit.
+Vim-Tasten überall:
 
-Die meisten Boards schalten Anhänge für Nachrichten ab. Fehlt das Feld im
-Formular, bietet die Vorschau `d` und `x` gar nicht erst an.
+| Taste | Wirkung |
+|-------|---------|
+| `j` `k` | bewegen |
+| `l` `Enter` | öffnen |
+| `h` `q` | zurück |
+| `Strg-D` `Strg-U` | halbe Seite |
+| `g` `G` | Anfang / Ende |
+| `Leer` `b` | Bildschirmseite vor / zurück |
+| `n` `p` | nächste / vorige Seite des Forums |
+| `/` | Liste filtern |
+| `M` | alles als gelesen markieren (Menü) bzw. dieses Forum (Themenliste) |
+| `s` | im Board suchen |
+| `w` | Board wechseln |
+| `m` | private Nachrichten |
+| `N` | neues Thema / neue Nachricht |
+| `r` | antworten |
+| `z` | zitierend antworten |
+| `e` | eigenen Beitrag bearbeiten |
+| `a` | Anhänge des Beitrags |
+| `J` `K` | nächster / voriger Beitrag im Thema |
+| `o` | im Browser öffnen |
+| `f` | nächstes Postfach (Eingang → Gesendet → Ausgang) |
+| `d` | Nachricht unter dem Cursor löschen |
 
-**Schreiben** — erste Zeile mit `#` ist der Betreff. Nach dem Speichern zeigt
-das Forum selbst die Vorschau; erst `a` sendet ab. Zitate laufen verlustfrei in
-beide Richtungen.
+## Lesen
 
-**Anhänge** — im Thread listet `a` die Anhänge des Beitrags, Enter lädt und
-öffnet, `s` speichert nur. Beim Schreiben hängt `d` in der Vorschau eine Datei
-an, `x` entfernt die letzte.
+Ungelesene Themen (`●`) öffnen sich **beim ersten neuen Beitrag**, egal auf
+welcher Seite er steht; neue Beiträge tragen ein `● neu`. Im Menü stehen die
+Übersichten, die jedes phpBB anbietet (ungelesen, neu seit dem letzten Besuch,
+eigene Beiträge, aktive und unbeantwortete Themen), und nach der Anmeldung
+auch **abonnierte Themen** und **Lesezeichen**. Wer den Forenbaum mit `/`
+filtert, sieht bei jedem Treffer, wo er hängt (`Benutzerforen › Duria 2`) —
+zwei gleichnamige Foren bleiben so unterscheidbar. `M` markiert nach
+Rückfrage alles als gelesen.
 
-**Zwei phpBB-Eigenheiten**, die Zeit kosten: Ein Formular, das in derselben
-Sekunde zurückkommt, gilt als ungültig (`if ($diff && …)` in `check_form_key`)
-— das sieht aus wie ein Passwortfehler. Und ein `class="error"` im HTML ist
-kein Fehler; das steht auch auf Erfolgsseiten. Erfolg positiv prüfen.
+`n`/`p` folgen den Seitenlinks des Boards selbst. Darum blättert der Client
+richtig, ob ein Board 10, 25 oder 50 Einträge pro Seite zeigt, und auch bei
+Styles, die nirgends „Seite x von y“ hinschreiben.
+
+## Schreiben
+
+`r`, `z`, `e` und `N` öffnen `$EDITOR` mit einer Markdown-Datei; die erste
+Zeile mit `#` ist der Betreff. Nach dem Speichern zeigt das Forum selbst die
+Vorschau, erst `a` sendet ab. Zitate laufen verlustfrei in beide Richtungen:
+aus `[quote="jemand"]` wird `> **jemand:**` und beim Senden wieder dasselbe.
+
+Kommt nach dem Absenden keine eindeutige Antwort (Verbindung weg, unbekannte
+Seite), warnt der Client: Der Beitrag ist **vielleicht schon gespeichert**,
+bitte erst im Thema nachsehen. So entsteht kein Beitrag doppelt. Lehnt das
+Forum eindeutig ab, geht es zurück in den Editor.
+
+## Private Nachrichten
+
+`m` im Forenbaum (oder der `✉`-Eintrag ganz oben) öffnet den Posteingang;
+daneben steht die Zahl der ungelesenen, `●` markiert sie in der Liste. `f`
+schaltet durch die drei Postfächer, die jedes phpBB hat: Eingang, Gesendet und
+Postausgang — letzteres sind abgeschickte Nachrichten, die der Empfänger noch
+nicht gelesen hat.
+
+Einen Namen nimmt phpBB beim Absenden nicht entgegen, er muss vorher in einem
+eigenen Gang zu einer Benutzernummer aufgelöst werden. Deshalb fragt `N` die
+Empfänger einzeln ab und prüft jeden sofort gegen das Board — ein Tippfehler
+fällt so vor dem Schreiben auf und nicht danach. Enter auf leerer Zeile
+beendet die Liste. Beim Antworten entfällt die Frage.
+
+## Anhänge
+
+Im Thema listet `a` die Anhänge des Beitrags: Enter lädt und öffnet, `s`
+speichert in den Download-Ordner, `S` fragt nach Ziel (Datei oder Ordner; ein
+bloßer Name landet im Download-Ordner). Eine vorhandene Datei wird nur nach
+Rückfrage ersetzt. Beim Schreiben hängt `d` in der Vorschau eine Datei an, `x`
+entfernt die letzte. Bieten Boards für Nachrichten keine Anhänge an, fehlen
+`d` und `x` dort.
+
+## Ohne Oberfläche: Automatisierung
+
+Alles Wichtige geht auch ohne Oberfläche, für Skripte und Zeitpläne, mit
+`--json`, Exit-Codes und `--dry-run`:
+
+```sh
+phpbb-tui topics example --forum 2 --page 1 --json
+phpbb-tui search example --unread --json
+phpbb-tui post example --forum 2 --subject "Bericht" --body-file bericht.md --dry-run
+```
+
+Einzelheiten (englisch): [Automatisierung](docs/automation.md),
+[Schreiben](docs/posting.md), [Nachrichten](docs/private-messages.md),
+[Anhänge](docs/attachments.md).
+
+## Einstellungen
+
+`~/.config/phpbb-tui/boards.toml`:
+
+```toml
+downloads = "~/Downloads"
+browser   = "xdg-open"
+
+[[board]]
+name = "example"
+url  = "https://forum.example.org/forum"
+user = "meinname"
+```
+
+`$BROWSER` wird bewusst **nicht** benutzt, weil es oft auf einen
+Textbrowser zeigt. Eigener Browser über `PHPBB_TUI_BROWSER`, eigener Editor
+über `PHPBB_TUI_EDITOR`. Die Oberfläche spricht Deutsch oder Englisch nach der
+Systemsprache; festlegen mit `PHPBB_TUI_LANG=de` bzw. `en`.
+
+## Langsamer Start? IPv6
+
+Manche Boards veröffentlichen eine IPv6-Adresse, die nie antwortet. Browser
+merken das kaum, weil sie beide Wege gleichzeitig probieren; Pythons
+`requests` probiert nacheinander und wartet erst das Zeitlimit ab — bei einem
+Board kostete das jeden Start 30 Sekunden. Dieser Client nimmt deshalb zuerst
+IPv4 und weicht nur auf IPv6 aus, wenn es kein IPv4 gibt oder es versagt.
+
+## Zwei phpBB-Eigenheiten, die Zeit kosten
+
+Ein Formular, das in derselben Sekunde zurückkommt, gilt als ungültig
+(`if ($diff && …)` in `check_form_key`) — das sieht aus wie ein
+Passwortfehler. Und ein `class="error"` im HTML ist kein Fehler; das steht auch
+auf Erfolgsseiten. Erfolg positiv prüfen.
+
+## Dank
+
+**[William Jacoby (bonelifer)](https://github.com/bonelifer)** hat die
+Kommandozeile ohne Oberfläche (Lesen, Schreiben, Nachrichten, Anhänge), die
+Testsammlung, viele Korrekturen und in der Oberfläche die Warnung bei
+unklarem Absenden, das Blättern über die Seitenlinks und „Speichern unter“
+beigetragen, geschrieben mit [Codex](https://openai.com/codex/).
+
+## Lizenz
+
+MIT

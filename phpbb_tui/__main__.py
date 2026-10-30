@@ -47,6 +47,10 @@ def auswahl(cfg: cfgmod.Config) -> cfgmod.BoardConfig | None:
 
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] in (["--version"], ["-V"]):
+        from . import __version__
+        print(f"phpbb-tui {__version__}")
+        return 0
     from . import cli
     if argv and argv[0] == "tui" and len(argv) > 1:
         argv = argv[1:]
