@@ -113,6 +113,9 @@ For lost or unrecognized send confirmations, see
 The existing `n`/`p` controls follow the board’s
 [pagination links](docs/tui-pagination.md).
 
+Attachment downloads support `S` for save-as and confirmation before
+[replacing existing files](docs/tui-downloads.md).
+
 ## Non-interactive / Automation
 
 Read and write without entering curses, opening an editor or browser, or answering
